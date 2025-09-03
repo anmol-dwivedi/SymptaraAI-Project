@@ -1,0 +1,21 @@
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.db
+
+.env
+.venv/
+venv/
+
+.vscode/
+.idea/
+
+.DS_Store
+Thumbs.db
+
+# Local Data Folders to Exclude
+ReferenceCodeChunks/
+Books/
+.streamlit/
+*.qdrant
