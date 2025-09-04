@@ -14,14 +14,6 @@ QDRANT_URL = os.getenv("QDRANT_URL")
 QDRANT_API_KEY = os.getenv("QDRANT_API_KEY")
 COLLECTION_NAME = "medibot_memory"
 
-def load_llm():
-    return ChatGroq(
-        model_name="llama-3.3-70b-versatile",  
-        groq_api_key=GROQ_API_KEY,
-        temperature=0.4,
-        max_tokens=1024
-    )
-
 CUSTOM_PROMPT_TEMPLATE = """
 You are a medical consultant. Use the context to answer the question.
 If you don't know the answer, say so. Do not guess.
@@ -32,33 +24,27 @@ Question: {question}
 Answer:
 """
 
-def set_custom_prompt(template: str):
-    return PromptTemplate(template=template, input_variables=["context", "question"])
+def set_custom_prompt():
+    """Returns the prompt template for the LLM."""
+    return PromptTemplate(template=CUSTOM_PROMPT_TEMPLATE, input_variables=["context", "question"])
 
-def main():
+def load_rag_chain():
+    """Initializes and returns the RAG chain with Qdrant and Groq."""
     embedding = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
     client = QdrantClient(url=QDRANT_URL, api_key=QDRANT_API_KEY)
+    vectorstore = QdrantVectorStore(client=client, collection_name=COLLECTION_NAME, embedding=embedding)
 
-    vectorstore = QdrantVectorStore(
-        client=client,
-        collection_name=COLLECTION_NAME,
-        embedding=embedding,
+    llm = ChatGroq(
+        model_name="llama-3.3-70b-versatile",
+        groq_api_key=GROQ_API_KEY,
+        temperature=0.4,
+        max_tokens=1024
     )
 
-    qa_chain = RetrievalQA.from_chain_type(
-        llm=load_llm(),
+    return RetrievalQA.from_chain_type(
+        llm=llm,
         chain_type="stuff",
         retriever=vectorstore.as_retriever(search_kwargs={"k": 3}),
         return_source_documents=True,
-        chain_type_kwargs={"prompt": set_custom_prompt(CUSTOM_PROMPT_TEMPLATE)}
+        chain_type_kwargs={"prompt": set_custom_prompt()}
     )
-
-    user_query = input("Ask MurphyBot: ")
-    response = qa_chain.invoke({"query": user_query})
-    print("\nAnswer:\n", response["result"])
-    print("\nSource Documents:")
-    for doc in response["source_documents"]:
-        print("-", doc.metadata.get("source", "N/A"))
-
-if __name__ == "__main__":
-    main()
