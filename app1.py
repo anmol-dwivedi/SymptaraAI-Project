@@ -1,7 +1,7 @@
-import os 
+import os
 import tempfile
 import streamlit as st
-import traceback 
+import traceback
 from langchain.chains import RetrievalQA
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_groq import ChatGroq
@@ -12,10 +12,9 @@ from dotenv import load_dotenv
 from langchain.memory import ConversationBufferMemory
 from langchain.chains import ConversationalRetrievalChain
 
-from pdf_utils import save_uploaded_file, load_and_chunk_pdf, append_chunks_to_faiss
+from pdf_utils import load_and_chunk_pdf, append_chunks_to_faiss
 from langchain.retrievers import EnsembleRetriever
 
-# Import user input handlers
 from user_input_handler import (
     initialize_session_state,
     get_user_input,
@@ -23,6 +22,12 @@ from user_input_handler import (
     add_message
 )
 
+# --- Whisper transcription (local)
+def transcribe_with_whisper(audio_path):
+    import whisper
+    model = whisper.load_model("base")
+    result = model.transcribe(audio_path)
+    return result["text"]
 
 # Load .env
 load_dotenv()
@@ -33,8 +38,6 @@ COLLECTION_NAME = "medibot_memory"
 
 EMBEDDING_MODEL_NAME = "sentence-transformers/all-MiniLM-L6-v2"
 GROQ_MODEL_NAME = "llama-3.3-70b-versatile"
-
-
 
 CUSTOM_PROMPT_TEMPLATE = """
 You are a medical consultant. Use the context to answer the question.
@@ -49,12 +52,8 @@ Question: {question}
 Answer:
 """
 
-
-
 def set_custom_prompt(template: str) -> PromptTemplate:
     return PromptTemplate(template=template, input_variables=["chat_history", "context", "question"])
-
-
 
 @st.cache_resource
 def get_vectorstore():
@@ -81,10 +80,10 @@ def main():
     initialize_session_state()
     display_past_messages()
 
-    # ==== PDF UPLOAD HANDLING (3 max, 10MB each, session-only) ====
+    # ==== PDF UPLOAD HANDLING ====
     uploaded_pdfs = st.file_uploader(
-        "Upload up to 3 PDF medical reports (max 10MB each, optional)", 
-        type=["pdf"], 
+        "Upload up to 3 PDF medical reports (max 10MB each, optional)",
+        type=["pdf"],
         accept_multiple_files=True,
         key="pdf_upload"
     )
@@ -96,7 +95,6 @@ def main():
             st.error("You can upload a maximum of 3 PDFs per session.")
             uploaded_pdfs = uploaded_pdfs[:MAX_PDFS]
 
-        # Session-only, accumulate all PDF chunks in one FAISS
         if "pdf_faiss" not in st.session_state:
             st.session_state["pdf_faiss"] = None
 
@@ -104,23 +102,47 @@ def main():
             if uploaded_file.size > MAX_SIZE_MB * 1024 * 1024:
                 st.warning(f"{uploaded_file.name} exceeds 10MB and was not added.")
                 continue
-            # Save to a temp file to pass to PyPDFLoader
             with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmpfile:
                 tmpfile.write(uploaded_file.read())
                 tmpfile.flush()
                 tmp_pdf_path = tmpfile.name
-            # Each chunk tagged with filename
             chunks = load_and_chunk_pdf(tmp_pdf_path, uploaded_file.name)
             st.session_state["pdf_faiss"] = append_chunks_to_faiss(
                 st.session_state["pdf_faiss"],
                 chunks,
                 EMBEDDING_MODEL_NAME
             )
-            os.remove(tmp_pdf_path)  # Clean up temp file
+            os.remove(tmp_pdf_path)
 
         st.success(f"{len(uploaded_pdfs)} PDF(s) loaded for this session.")
 
-    user_input = get_user_input()
+    # === MULTIMODAL INPUT SECTION ===
+    st.markdown("**You can either speak your query (mic) or type it below.**")
+
+    # 1. Voice input
+    audio_file = st.audio_input("🎤 Speak your question to MurphyBot")
+    user_input = None
+
+    if audio_file is not None:
+        # Save and transcribe audio
+        audio_save_path = "recorded_query.wav"
+        with open(audio_save_path, "wb") as f:
+            f.write(audio_file.getbuffer())
+        st.success("Audio recorded. Now transcribing...")
+
+        try:
+            transcript = transcribe_with_whisper(audio_save_path)
+            st.markdown("**Transcription:**")
+            st.write(transcript)
+            user_input = transcript
+        except Exception as e:
+            st.error(f"Transcription error: {e}")
+
+    # 2. Text input (only if no audio input)
+    if user_input is None:
+        text_input = get_user_input()
+        if text_input:
+            user_input = text_input
 
     # ==== MEMORY ====
     if "memory" not in st.session_state:
@@ -132,6 +154,7 @@ def main():
         )
     memory = st.session_state.memory
 
+    # ==== RAG QA Logic ====
     if user_input:
         st.chat_message("user").markdown(user_input)
         add_message("user", user_input)
@@ -140,7 +163,7 @@ def main():
             vectorstore = get_vectorstore()
             persistent_retriever = vectorstore.as_retriever(search_kwargs={"k": 3})
 
-            # ==== COMBINE KB + PDF FAISS ====
+            # Combine knowledge base and PDF memory
             if st.session_state.get("pdf_faiss"):
                 pdf_retriever = st.session_state["pdf_faiss"].as_retriever(search_kwargs={"k": 3})
                 combined_retriever = EnsembleRetriever(
