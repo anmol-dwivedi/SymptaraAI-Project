@@ -1,0 +1,23 @@
+[project]
+name = "murphybot-aichatbot"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "docling>=2.73.1",
+    "fastapi>=0.129.0",
+    "googlemaps>=4.10.0",
+    "matplotlib>=3.10.8",
+    "neo4j>=6.1.0",
+    "numpy>=2.2.6",
+    "openai>=2.21.0",
+    "pandas>=2.3.3",
+    "pydantic>=2.12.5",
+    "python-dotenv>=1.2.1",
+    "scikit-learn>=1.7.2",
+    "scipy>=1.15.3",
+    "seaborn>=0.13.2",
+    "uvicorn>=0.41.0",
+    "weaviate-client>=4.19.3",
+]

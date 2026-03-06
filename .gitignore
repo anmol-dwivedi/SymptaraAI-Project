@@ -1,0 +1,38 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Virtual environments
+.venv/
+env/
+venv/
+
+# Conda
+*.conda
+
+# UV
+uv.lock
+
+# Environment variables
+.env
+
+# Data / corpora
+books/
+data/
+*.pdf
+primekg_graph_db_csv/
+chroma_db/
+
+
+# Neo4j dumps
+*.dump
+
+# Logs
+logs/
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
