@@ -1,13 +1,5 @@
-# from fastapi import APIRouter
-
-# router = APIRouter()
-
-# @router.get("/profile/health")
-# def profile_health():
-#     return {"status": "profile router health"}
-
-
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, UploadFile, File, Form
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from services.context_assembler import assemble_context
 from services.triage_controller import run_triage
@@ -15,27 +7,36 @@ from services.memory_service import (
     create_session, save_message, get_history,
     conclude_session, supabase
 )
+from services.file_processor import process_file
+from services.doctor_finder import find_nearby_doctors
 
 router = APIRouter()
 
 
 class ConsultationRequest(BaseModel):
     user_id:              str
-    session_id:           str | None = None   # None = start new session
+    session_id:           str | None = None
     message:              str
     accumulated_symptoms: list[str] = []
     turn_count:           int = 0
-    file_analysis:        str | None = None   # Claude vision output if file uploaded
+    file_analysis:        str | None = None
+    lat:                  float | None = None
+    lng:                  float | None = None
+    location_text:        str | None = None
+    input_method:         str = "text" 
 
 
 class ConsultationResponse(BaseModel):
-    session_id:           str
-    state:                str                 # GATHERING | NARROWING | CONCLUSION
-    response:             str
-    is_conclusion:        bool
-    all_symptoms:         list[str]
-    graph_candidates:     list[dict]
-    turn_count:           int
+    session_id:       str
+    state:            str
+    response:         str
+    is_conclusion:    bool
+    all_symptoms:     list[str]
+    graph_candidates: list[dict]
+    turn_count:       int
+    doctors:          list[dict] = []
+    urgency_level:    str = "routine"
+    specialist_type:  str = ""
 
 
 @router.post("/message", response_model=ConsultationResponse)
@@ -46,11 +47,11 @@ async def consultation_message(req: ConsultationRequest):
     Client sends message + accumulated state.
     Server returns response + updated state.
     Client stores accumulated_symptoms and turn_count between turns.
+    On CONCLUSION: also returns nearby doctors + urgency level.
     """
 
     # ── Session management ────────────────────────────────────────────────────
     if req.session_id:
-        # Verify session exists
         result = supabase.table("sessions") \
             .select("session_id, status") \
             .eq("session_id", req.session_id) \
@@ -61,11 +62,10 @@ async def consultation_message(req: ConsultationRequest):
             raise HTTPException(status_code=400, detail="Session already concluded")
         session_id = req.session_id
     else:
-        # Start new session
         session_id = create_session(req.user_id)
 
     # ── Save user message ─────────────────────────────────────────────────────
-    save_message(session_id, "user", req.message)
+    save_message(session_id, "user", req.message, input_method=req.input_method)
 
     # ── Run full RAG pipeline ─────────────────────────────────────────────────
     try:
@@ -94,13 +94,32 @@ async def consultation_message(req: ConsultationRequest):
         hpo_terms=context["hpo_ids"]
     )
 
-    # ── Conclude session if done ──────────────────────────────────────────────
+    # ── Conclude session + find doctors if done ───────────────────────────────
+    doctors         = []
+    urgency_level   = "routine"
+    specialist_type = ""
+
     if triage_result["is_conclusion"]:
         diagnoses = [
             {"disease": c["disease"], "score": c.get("match_ratio", 0)}
             for c in context["graph_candidates"]
         ]
         conclude_session(session_id, diagnoses)
+
+        # Fire doctor finder only on conclusion
+        try:
+            doctor_result   = find_nearby_doctors(
+                diagnoses=context["graph_candidates"],
+                symptoms=context["all_symptoms"],
+                lat=req.lat,
+                lng=req.lng,
+                location_text=req.location_text
+            )
+            doctors         = doctor_result["doctors"]
+            urgency_level   = doctor_result["urgency_level"]
+            specialist_type = doctor_result["specialist_type"]
+        except Exception:
+            pass  # Non-blocking — don't fail the whole response if Maps fails
 
     return ConsultationResponse(
         session_id=session_id,
@@ -109,7 +128,10 @@ async def consultation_message(req: ConsultationRequest):
         is_conclusion=triage_result["is_conclusion"],
         all_symptoms=context["all_symptoms"],
         graph_candidates=context["graph_candidates"],
-        turn_count=req.turn_count + 1
+        turn_count=req.turn_count + 1,
+        doctors=doctors,
+        urgency_level=urgency_level,
+        specialist_type=specialist_type
     )
 
 
@@ -125,6 +147,66 @@ async def get_session(session_id: str):
 
     history = get_history(session_id)
     return {
-        "session": result.data[0],
+        "session":  result.data[0],
         "messages": history
+    }
+
+
+@router.post("/upload-file")
+async def upload_file(
+    session_id: str = Form(...),
+    user_id:    str = Form(...),
+    file:       UploadFile = File(...)
+):
+    """
+    Upload a medical file (PDF or image) attached to a consultation session.
+    Returns Claude's analysis as text — frontend passes this as
+    file_analysis in the next /consultation/message call.
+    """
+    MAX_SIZE = 10 * 1024 * 1024  # 10MB
+
+    file_bytes = await file.read()
+
+    if len(file_bytes) > MAX_SIZE:
+        raise HTTPException(
+            status_code=413,
+            detail="File too large. Maximum size is 10MB."
+        )
+
+    if len(file_bytes) == 0:
+        raise HTTPException(
+            status_code=400,
+            detail="Empty file uploaded."
+        )
+
+    result = process_file(
+        file_bytes=file_bytes,
+        media_type=file.content_type or "",
+        filename=file.filename or ""
+    )
+
+    if not result["success"]:
+        raise HTTPException(
+            status_code=422,
+            detail=result["error"]
+        )
+
+    # Store in Supabase session_files (non-blocking)
+    try:
+        supabase.table("session_files").insert({
+            "session_id":      session_id,
+            "file_type":       result["file_type"],
+            "storage_path":    file.filename,
+            "claude_analysis": result["analysis"]
+        }).execute()
+    except Exception:
+        pass
+
+    return {
+        "success":   True,
+        "file_type": result["file_type"],
+        "filename":  file.filename,
+        "analysis":  result["analysis"],
+        "message":   "File analyzed successfully. This analysis will be "
+                     "included in your next consultation message."
     }

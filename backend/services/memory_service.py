@@ -21,14 +21,18 @@ def create_session(user_id: str) -> str:
     return result.data[0]["session_id"]
 
 
-def save_message(session_id: str, role: str, content: str,
-                 symptoms: list = None, hpo_terms: list = None):
+def save_message(session_id: str, role: str,
+                 content: str,
+                 symptoms: list = None, 
+                 hpo_terms: list = None,
+                 input_method: str = "text"):
     supabase.table("messages").insert({
         "session_id": session_id,
         "role": role,
         "content": content,
         "extracted_symptoms": symptoms or [],
-        "hpo_terms": hpo_terms or []
+        "hpo_terms": hpo_terms or [],
+        "input_method":  input_method
     }).execute()
 
 

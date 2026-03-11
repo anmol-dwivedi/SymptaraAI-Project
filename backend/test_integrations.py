@@ -349,3 +349,82 @@ print(f"\n  Session history: {len(history['messages'])} messages stored ✅")
 
 server.should_exit = True
 print("\n✅ consultation router passed. Day 2 backend complete!")
+
+
+
+
+
+
+# ── Test 11: file_processor ───────────────────────────────────────────────────
+print("Testing file_processor...")
+from services.file_processor import process_pdf, process_file
+import urllib.request
+
+# ── PDF test: download a small real medical PDF ───────────────────────────────
+print("\n  Testing PDF processing...")
+PDF_URL = "https://www.w3.org/WAI/WCAG21/Techniques/pdf/img/table-word.pdf"
+try:
+    with urllib.request.urlopen(PDF_URL, timeout=10) as r:
+        pdf_bytes = r.read()
+
+    result = process_pdf(pdf_bytes)
+    print(f"    Success:    {result['success']}")
+    print(f"    Pages:      {result['page_count']}")
+    print(f"    Text len:   {len(result['text'])} chars")
+    if result["success"]:
+        print(f"    Preview:    {result['text'][:100].strip()}...")
+        print("    ✅ PDF processing works")
+    else:
+        print(f"    Error: {result['error']}")
+except Exception as e:
+    print(f"    ⚠ PDF download failed (network): {e}")
+    print("    Testing with synthetic PDF instead...")
+
+    # Create minimal valid PDF in memory
+    import fitz
+    doc = fitz.open()
+    page = doc.new_page()
+    page.insert_text((50, 50), "Patient: John Doe\nDiagnosis: Hypertension\nMedication: Lisinopril 10mg")
+    pdf_bytes = doc.tobytes()
+    doc.close()
+
+    result = process_pdf(pdf_bytes)
+    assert result["success"], f"PDF failed: {result['error']}"
+    assert "Lisinopril" in result["text"]
+    print(f"    ✅ PDF processing works ({result['page_count']} page, {len(result['text'])} chars)")
+
+
+
+
+
+# ── Test 12: doctor_finder ────────────────────────────────────────────────────
+print("Testing doctor_finder...")
+from services.doctor_finder import find_nearby_doctors
+
+# Simulate meningitis conclusion
+diagnoses = [
+    {"disease": "Bacterial Meningitis", "match_ratio": 0.75},
+    {"disease": "Viral Meningitis",     "match_ratio": 0.60},
+]
+symptoms = ["fever", "headache", "neck stiffness", "photophobia"]
+
+# Test with text location (Dallas from your Colab)
+result = find_nearby_doctors(
+    diagnoses=diagnoses,
+    symptoms=symptoms,
+    location_text="Dallas, TX"
+)
+
+print(f"\n  Specialist type: {result['specialist_type']}")
+print(f"  Urgency level:   {result['urgency_level']}")
+print(f"  Search used:     {result['search_used']}")
+print(f"  Doctors found:   {len(result['doctors'])}")
+for i, d in enumerate(result["doctors"], 1):
+    print(f"\n    {i}. {d['name']}")
+    print(f"       {d['address']}")
+    print(f"       ⭐ {d.get('rating')} ({d.get('user_ratings_total', 0)} reviews)")
+    print(f"       {d['google_maps_link']}")
+
+assert len(result["doctors"]) > 0, "Expected at least 1 doctor"
+assert result["urgency_level"] in ["routine", "urgent", "emergency"]
+print("\n✅ doctor_finder passed.")
