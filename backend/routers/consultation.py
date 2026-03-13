@@ -10,6 +10,12 @@ from services.memory_service import (
 from services.file_processor import process_file
 from services.doctor_finder import find_nearby_doctors
 
+# mcp imports
+from services.mcp_enrichment import enrich_conclusion
+import logging
+log = logging.getLogger("murphybot.consultation")
+
+
 router = APIRouter()
 
 
@@ -37,6 +43,7 @@ class ConsultationResponse(BaseModel):
     doctors:          list[dict] = []
     urgency_level:    str = "routine"
     specialist_type:  str = ""
+    mcp_enrichment:   dict = {}
 
 
 @router.post("/message", response_model=ConsultationResponse)
@@ -98,6 +105,7 @@ async def consultation_message(req: ConsultationRequest):
     doctors         = []
     urgency_level   = "routine"
     specialist_type = ""
+    mcp_data        = {}
 
     if triage_result["is_conclusion"]:
         diagnoses = [
@@ -120,6 +128,21 @@ async def consultation_message(req: ConsultationRequest):
             specialist_type = doctor_result["specialist_type"]
         except Exception:
             pass  # Non-blocking — don't fail the whole response if Maps fails
+        
+        # MCP enrichment
+        try:
+            current_meds = (context["user_profile"] or {}).get(
+                "current_medications", []
+            )
+            mcp_data = enrich_conclusion(
+                diagnoses=context["graph_candidates"],
+                symptoms=context["all_symptoms"],
+                current_medications=current_meds,
+                user_profile=context["user_profile"]
+            )
+        except Exception as e:
+            log.warning(f"MCP enrichment failed: {e}")
+
 
     return ConsultationResponse(
         session_id=session_id,
@@ -131,7 +154,8 @@ async def consultation_message(req: ConsultationRequest):
         turn_count=req.turn_count + 1,
         doctors=doctors,
         urgency_level=urgency_level,
-        specialist_type=specialist_type
+        specialist_type=specialist_type,
+        mcp_enrichment=mcp_data
     )
 
 

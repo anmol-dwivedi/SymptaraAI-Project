@@ -428,3 +428,54 @@ for i, d in enumerate(result["doctors"], 1):
 assert len(result["doctors"]) > 0, "Expected at least 1 doctor"
 assert result["urgency_level"] in ["routine", "urgent", "emergency"]
 print("\n✅ doctor_finder passed.")
+
+
+
+
+
+
+
+# ── Test 13: mcp_enrichment ───────────────────────────────────────────────────
+print("Testing mcp_enrichment...")
+from services.mcp_enrichment import enrich_conclusion
+from services.mcp.mcp_client import is_mcp_available
+
+mcp_up = is_mcp_available()
+print(f"\n  MCP server available: {mcp_up}")
+if not mcp_up:
+    print("  ⚠ MCP server not running — drug/literature/guidelines will use fallbacks")
+    print("  To start: cd medical-mcp && npm start")
+
+diagnoses = [
+    {"disease": "Bacterial Meningitis", "match_ratio": 0.75, "drugs": ["Ceftriaxone", "Dexamethasone"]},
+    {"disease": "Viral Meningitis",     "match_ratio": 0.60, "drugs": ["Acyclovir"]},
+]
+symptoms = ["fever", "headache", "neck stiffness", "photophobia"]
+current_meds = ["Warfarin"]  # simulate user taking a blood thinner
+
+result = enrich_conclusion(
+    diagnoses=diagnoses,
+    symptoms=symptoms,
+    current_medications=current_meds
+)
+
+print(f"\n  Drugs found:       {len(result['drugs'])}")
+for d in result["drugs"]:
+    print(f"    - {d['name']} (FDA data: {d['available']})")
+
+print(f"\n  Interactions:      {len(result['interactions'])}")
+for i in result["interactions"]:
+    print(f"    ⚠ {i['drug_1']} + {i['drug_2']} [{i['severity']}]: {i['description'][:80]}")
+
+print(f"\n  PubMed papers:     {len(result['pubmed_papers'])}")
+for p in result["pubmed_papers"]:
+    print(f"    - {p['title'][:70]}...")
+
+print(f"\n  Guidelines:        {'yes' if result['guidelines'].get('guideline') else 'no'}")
+
+print(f"\n  Confirmatory tests: {len(result['tests'])}")
+for t in result["tests"]:
+    print(f"    [{t.get('urgency','?')}] {t.get('test','')} — {t.get('purpose','')[:60]}")
+
+assert len(result["tests"]) > 0, "Claude should always return tests regardless of MCP"
+print("\n✅ mcp_enrichment passed.")
