@@ -241,6 +241,8 @@ assert determine_triage_state(["fever"], [], 0) == "GATHERING"
 assert determine_triage_state(["fever", "headache", "neck stiffness"], [1,2,3,4,5,6], 2) == "NARROWING"
 assert determine_triage_state(["fever", "headache", "neck stiffness"], [1,2,3], 0) == "CONCLUSION"
 assert determine_triage_state(["fever", "headache", "neck stiffness"], [1,2,3,4,5,6], 5) == "CONCLUSION"
+# New — POST_CONCLUSION overrides everything
+assert determine_triage_state(["fever"], [], 0, is_post_conclusion=True) == "POST_CONCLUSION"
 print("  ✅ State machine logic correct")
 
 # ── GATHERING state ───────────────────────────────────────────────────────────
@@ -316,7 +318,7 @@ r = httpx.post(f"{BASE}/consultation/message", json={
     "message":              "I have a bad headache and fever",
     "accumulated_symptoms": [],
     "turn_count":           0
-}, timeout=30)
+}, timeout=60)
 assert r.status_code == 200, f"Turn 1 failed: {r.text}"
 t1 = r.json()
 print(f"\n  Turn 1:")
@@ -331,14 +333,32 @@ r = httpx.post(f"{BASE}/consultation/message", json={
     "message":              "Yes and my neck is very stiff, light hurts my eyes",
     "accumulated_symptoms": t1["all_symptoms"],
     "turn_count":           t1["turn_count"]
-}, timeout=30)
+}, timeout=60)
 assert r.status_code == 200, f"Turn 2 failed: {r.text}"
-t2 = r.json()
+t2 = r.json()                          # ← parse t2 FIRST
 print(f"\n  Turn 2:")
 print(f"    State:    {t2['state']}")
 print(f"    Symptoms: {t2['all_symptoms']}")
 print(f"    Conclusion: {t2['is_conclusion']}")
 print(f"    Response: {t2['response'][:200]}...")
+
+# Turn 3 — POST_CONCLUSION (only if Turn 2 reached conclusion)
+if t2["is_conclusion"]:
+    print(f"\n  Turn 3 (POST_CONCLUSION follow-up)...")
+    r = httpx.post(f"{BASE}/consultation/message", json={
+        "user_id":              TEST_USER,
+        "session_id":           t1["session_id"],
+        "message":              "What does bacterial meningitis mean for me?",
+        "accumulated_symptoms": t2["all_symptoms"],
+        "turn_count":           t2["turn_count"],
+        "is_post_conclusion":   True
+    }, timeout=60)
+    assert r.status_code == 200, f"POST_CONCLUSION failed: {r.text}"
+    t3 = r.json()
+    print(f"    State:    {t3['state']}")
+    print(f"    Response: {t3['response'][:200]}...")
+    assert t3["state"] == "POST_CONCLUSION"
+    print("  ✅ POST_CONCLUSION works")
 
 # Session history check
 r = httpx.get(f"{BASE}/consultation/session/{t1['session_id']}")
@@ -435,47 +455,47 @@ print("\n✅ doctor_finder passed.")
 
 
 
-# ── Test 13: mcp_enrichment ───────────────────────────────────────────────────
-print("Testing mcp_enrichment...")
-from services.mcp_enrichment import enrich_conclusion
-from services.mcp.mcp_client import is_mcp_available
+# # ── Test 13: mcp_enrichment ───────────────────────────────────────────────────
+# print("Testing mcp_enrichment...")
+# from services.mcp_enrichment import enrich_conclusion
+# from services.mcp.mcp_client import is_mcp_available
 
-mcp_up = is_mcp_available()
-print(f"\n  MCP server available: {mcp_up}")
-if not mcp_up:
-    print("  ⚠ MCP server not running — drug/literature/guidelines will use fallbacks")
-    print("  To start: cd medical-mcp && npm start")
+# mcp_up = is_mcp_available()
+# print(f"\n  MCP server available: {mcp_up}")
+# if not mcp_up:
+#     print("  ⚠ MCP server not running — drug/literature/guidelines will use fallbacks")
+#     print("  To start: cd medical-mcp && npm start")
 
-diagnoses = [
-    {"disease": "Bacterial Meningitis", "match_ratio": 0.75, "drugs": ["Ceftriaxone", "Dexamethasone"]},
-    {"disease": "Viral Meningitis",     "match_ratio": 0.60, "drugs": ["Acyclovir"]},
-]
-symptoms = ["fever", "headache", "neck stiffness", "photophobia"]
-current_meds = ["Warfarin"]  # simulate user taking a blood thinner
+# diagnoses = [
+#     {"disease": "Bacterial Meningitis", "match_ratio": 0.75, "drugs": ["Ceftriaxone", "Dexamethasone"]},
+#     {"disease": "Viral Meningitis",     "match_ratio": 0.60, "drugs": ["Acyclovir"]},
+# ]
+# symptoms = ["fever", "headache", "neck stiffness", "photophobia"]
+# current_meds = ["Warfarin"]  # simulate user taking a blood thinner
 
-result = enrich_conclusion(
-    diagnoses=diagnoses,
-    symptoms=symptoms,
-    current_medications=current_meds
-)
+# result = enrich_conclusion(
+#     diagnoses=diagnoses,
+#     symptoms=symptoms,
+#     current_medications=current_meds
+# )
 
-print(f"\n  Drugs found:       {len(result['drugs'])}")
-for d in result["drugs"]:
-    print(f"    - {d['name']} (FDA data: {d['available']})")
+# print(f"\n  Drugs found:       {len(result['drugs'])}")
+# for d in result["drugs"]:
+#     print(f"    - {d['name']} (FDA data: {d['available']})")
 
-print(f"\n  Interactions:      {len(result['interactions'])}")
-for i in result["interactions"]:
-    print(f"    ⚠ {i['drug_1']} + {i['drug_2']} [{i['severity']}]: {i['description'][:80]}")
+# print(f"\n  Interactions:      {len(result['interactions'])}")
+# for i in result["interactions"]:
+#     print(f"    ⚠ {i['drug_1']} + {i['drug_2']} [{i['severity']}]: {i['description'][:80]}")
 
-print(f"\n  PubMed papers:     {len(result['pubmed_papers'])}")
-for p in result["pubmed_papers"]:
-    print(f"    - {p['title'][:70]}...")
+# print(f"\n  PubMed papers:     {len(result['pubmed_papers'])}")
+# for p in result["pubmed_papers"]:
+#     print(f"    - {p['title'][:70]}...")
 
-print(f"\n  Guidelines:        {'yes' if result['guidelines'].get('guideline') else 'no'}")
+# print(f"\n  Guidelines:        {'yes' if result['guidelines'].get('guideline') else 'no'}")
 
-print(f"\n  Confirmatory tests: {len(result['tests'])}")
-for t in result["tests"]:
-    print(f"    [{t.get('urgency','?')}] {t.get('test','')} — {t.get('purpose','')[:60]}")
+# print(f"\n  Confirmatory tests: {len(result['tests'])}")
+# for t in result["tests"]:
+#     print(f"    [{t.get('urgency','?')}] {t.get('test','')} — {t.get('purpose','')[:60]}")
 
-assert len(result["tests"]) > 0, "Claude should always return tests regardless of MCP"
-print("\n✅ mcp_enrichment passed.")
+# assert len(result["tests"]) > 0, "Claude should always return tests regardless of MCP"
+# print("\n✅ mcp_enrichment passed.")

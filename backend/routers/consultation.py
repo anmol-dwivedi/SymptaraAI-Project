@@ -1,21 +1,26 @@
+"""
+consultation.py router
+======================
+Accepts timezone, local_time, and location from frontend.
+Stores them on session conclusion for the medical report.
+"""
+
+import logging
 from fastapi import APIRouter, HTTPException, UploadFile, File, Form
-from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from services.context_assembler import assemble_context
 from services.triage_controller import run_triage
 from services.memory_service import (
     create_session, save_message, get_history,
-    conclude_session, supabase
+    conclude_session, supabase, reset_session,
+    get_session_conclusion
 )
 from services.file_processor import process_file
 from services.doctor_finder import find_nearby_doctors
-
-# mcp imports
 from services.mcp_enrichment import enrich_conclusion
-import logging
-log = logging.getLogger("murphybot.consultation")
+from services.report_assembler import assemble_report
 
-
+log    = logging.getLogger("murphybot.consultation")
 router = APIRouter()
 
 
@@ -29,7 +34,10 @@ class ConsultationRequest(BaseModel):
     lat:                  float | None = None
     lng:                  float | None = None
     location_text:        str | None = None
-    input_method:         str = "text" 
+    input_method:         str = "text"
+    is_post_conclusion:   bool = False
+    timezone:             str | None = None   # e.g. "America/Chicago"
+    local_time:           str | None = None   # e.g. "2026-03-13T15:45:00"
 
 
 class ConsultationResponse(BaseModel):
@@ -49,12 +57,9 @@ class ConsultationResponse(BaseModel):
 @router.post("/message", response_model=ConsultationResponse)
 async def consultation_message(req: ConsultationRequest):
     """
-    Single endpoint for the entire consultation flow.
-
-    Client sends message + accumulated state.
-    Server returns response + updated state.
-    Client stores accumulated_symptoms and turn_count between turns.
-    On CONCLUSION: also returns nearby doctors + urgency level.
+    Single endpoint for entire consultation flow including POST_CONCLUSION.
+    Accepts location, timezone, and local_time from frontend on every turn.
+    These are stored at conclusion time for the medical report.
     """
 
     # ── Session management ────────────────────────────────────────────────────
@@ -65,56 +70,102 @@ async def consultation_message(req: ConsultationRequest):
             .execute()
         if not result.data:
             raise HTTPException(status_code=404, detail="Session not found")
-        if result.data[0]["status"] == "concluded":
-            raise HTTPException(status_code=400, detail="Session already concluded")
+        if result.data[0]["status"] == "reset":
+            raise HTTPException(
+                status_code=400,
+                detail="Session has been reset. Please start a new session."
+            )
         session_id = req.session_id
     else:
         session_id = create_session(req.user_id)
 
     # ── Save user message ─────────────────────────────────────────────────────
-    save_message(session_id, "user", req.message, input_method=req.input_method)
+    save_message(
+        session_id, "user", req.message,
+        input_method=req.input_method
+    )
 
-    # ── Run full RAG pipeline ─────────────────────────────────────────────────
+    # ── Restore MCP enrichment for POST_CONCLUSION ────────────────────────────
+    restored_mcp = {}
+    if req.is_post_conclusion:
+        conclusion_data = get_session_conclusion(session_id)
+        restored_mcp    = conclusion_data.get("mcp_enrichment", {})
+
+    # ── Run RAG pipeline ──────────────────────────────────────────────────────
     try:
         context = assemble_context(
             user_message=req.message,
             session_id=session_id,
             user_id=req.user_id,
             accumulated_symptoms=req.accumulated_symptoms,
-            file_analysis=req.file_analysis
+            file_analysis=req.file_analysis,
+            location_text=req.location_text,
+            local_time=req.local_time,
+            timezone=req.timezone
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Context assembly failed: {str(e)}")
 
     # ── Run triage controller ─────────────────────────────────────────────────
     try:
-        triage_result = run_triage(context, turn_count=req.turn_count)
+        triage_result = run_triage(
+            context,
+            turn_count=req.turn_count,
+            is_post_conclusion=req.is_post_conclusion,
+            mcp_enrichment=restored_mcp
+        )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Triage failed: {str(e)}")
 
     # ── Save assistant response ───────────────────────────────────────────────
     save_message(
-        session_id,
-        "assistant",
-        triage_result["response"],
+        session_id, "assistant", triage_result["response"],
         symptoms=context["all_symptoms"],
         hpo_terms=context["hpo_ids"]
     )
 
-    # ── Conclude session + find doctors if done ───────────────────────────────
+    # ── Conclude session + fire enrichments ───────────────────────────────────
     doctors         = []
     urgency_level   = "routine"
     specialist_type = ""
     mcp_data        = {}
 
     if triage_result["is_conclusion"]:
+
+        # MCP enrichment
+        try:
+            current_meds = (context["user_profile"] or {}).get("current_medications", [])
+            mcp_data     = enrich_conclusion(
+                diagnoses=context["graph_candidates"],
+                symptoms=context["all_symptoms"],
+                current_medications=current_meds,
+                user_profile=context["user_profile"]
+            )
+        except Exception as e:
+            log.warning(f"MCP enrichment failed: {e}")
+
+        # Build location dict for storage
+        location = {}
+        if req.lat and req.lng:
+            location = {"lat": req.lat, "lng": req.lng, "location_text": req.location_text}
+        elif req.location_text:
+            location = {"location_text": req.location_text}
+
+        # Store conclusion with all context
         diagnoses = [
             {"disease": c["disease"], "score": c.get("match_ratio", 0)}
             for c in context["graph_candidates"]
         ]
-        conclude_session(session_id, diagnoses)
+        conclude_session(
+            session_id,
+            diagnoses,
+            mcp_enrichment=mcp_data,
+            location=location if location else None,
+            timezone=req.timezone,
+            local_time=req.local_time
+        )
 
-        # Fire doctor finder only on conclusion
+        # Doctor finder
         try:
             doctor_result   = find_nearby_doctors(
                 diagnoses=context["graph_candidates"],
@@ -127,22 +178,10 @@ async def consultation_message(req: ConsultationRequest):
             urgency_level   = doctor_result["urgency_level"]
             specialist_type = doctor_result["specialist_type"]
         except Exception:
-            pass  # Non-blocking — don't fail the whole response if Maps fails
-        
-        # MCP enrichment
-        try:
-            current_meds = (context["user_profile"] or {}).get(
-                "current_medications", []
-            )
-            mcp_data = enrich_conclusion(
-                diagnoses=context["graph_candidates"],
-                symptoms=context["all_symptoms"],
-                current_medications=current_meds,
-                user_profile=context["user_profile"]
-            )
-        except Exception as e:
-            log.warning(f"MCP enrichment failed: {e}")
+            pass
 
+    if req.is_post_conclusion and restored_mcp:
+        mcp_data = restored_mcp
 
     return ConsultationResponse(
         session_id=session_id,
@@ -159,21 +198,60 @@ async def consultation_message(req: ConsultationRequest):
     )
 
 
+@router.post("/new-session")
+async def new_session(user_id: str, current_session_id: str | None = None):
+    """New Session button — resets current session and creates fresh one."""
+    if current_session_id:
+        try:
+            reset_session(current_session_id)
+        except Exception:
+            pass
+    new_sid = create_session(user_id)
+    return {"session_id": new_sid, "message": "New session started."}
+
+
+@router.get("/report/{session_id}")
+async def get_report(session_id: str, user_id: str):
+    """
+    Generate full medical report for a concluded session.
+    Called by the frontend Report Download button.
+    Includes patient location, local time, and timezone.
+    """
+    result = supabase.table("sessions") \
+        .select("session_id, status, user_id") \
+        .eq("session_id", session_id) \
+        .execute()
+
+    if not result.data:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    session = result.data[0]
+    if session["user_id"] != user_id:
+        raise HTTPException(status_code=403, detail="Not authorized")
+    if session["status"] not in ("concluded", "reset"):
+        raise HTTPException(
+            status_code=400,
+            detail="Report only available after consultation is concluded."
+        )
+
+    try:
+        report = assemble_report(session_id=session_id, user_id=user_id)
+        return report
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Report generation failed: {str(e)}")
+
+
 @router.get("/session/{session_id}")
 async def get_session(session_id: str):
-    """Retrieve full session history. Used by frontend to restore a chat."""
+    """Retrieve full session history."""
     result = supabase.table("sessions") \
         .select("*") \
         .eq("session_id", session_id) \
         .execute()
     if not result.data:
         raise HTTPException(status_code=404, detail="Session not found")
-
     history = get_history(session_id)
-    return {
-        "session":  result.data[0],
-        "messages": history
-    }
+    return {"session": result.data[0], "messages": history}
 
 
 @router.post("/upload-file")
@@ -182,26 +260,13 @@ async def upload_file(
     user_id:    str = Form(...),
     file:       UploadFile = File(...)
 ):
-    """
-    Upload a medical file (PDF or image) attached to a consultation session.
-    Returns Claude's analysis as text — frontend passes this as
-    file_analysis in the next /consultation/message call.
-    """
-    MAX_SIZE = 10 * 1024 * 1024  # 10MB
-
+    MAX_SIZE   = 10 * 1024 * 1024
     file_bytes = await file.read()
 
     if len(file_bytes) > MAX_SIZE:
-        raise HTTPException(
-            status_code=413,
-            detail="File too large. Maximum size is 10MB."
-        )
-
+        raise HTTPException(status_code=413, detail="File too large. Maximum 10MB.")
     if len(file_bytes) == 0:
-        raise HTTPException(
-            status_code=400,
-            detail="Empty file uploaded."
-        )
+        raise HTTPException(status_code=400, detail="Empty file.")
 
     result = process_file(
         file_bytes=file_bytes,
@@ -210,12 +275,8 @@ async def upload_file(
     )
 
     if not result["success"]:
-        raise HTTPException(
-            status_code=422,
-            detail=result["error"]
-        )
+        raise HTTPException(status_code=422, detail=result["error"])
 
-    # Store in Supabase session_files (non-blocking)
     try:
         supabase.table("session_files").insert({
             "session_id":      session_id,
@@ -231,6 +292,5 @@ async def upload_file(
         "file_type": result["file_type"],
         "filename":  file.filename,
         "analysis":  result["analysis"],
-        "message":   "File analyzed successfully. This analysis will be "
-                     "included in your next consultation message."
+        "message":   "File analyzed and saved to session. Included in all future turns automatically."
     }

@@ -1,28 +1,29 @@
 import os
+import logging
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from config import settings
-from routers import chat, consultation, profile
+from routers import consultation, profile
 
+logging.basicConfig(level=logging.INFO)
 
 os.environ["LANGCHAIN_TRACING_V2"] = "true"
-os.environ["LANGCHAIN_API_KEY"] = settings.langchain_api_key
-os.environ["LANGCHAIN_PROJECT"] = settings.langchain_project
+os.environ["LANGCHAIN_API_KEY"]    = settings.langchain_api_key
+os.environ["LANGCHAIN_PROJECT"]    = settings.langchain_project
 
-
-app = FastAPI(title="MurphyBot API", version="0.1.0")
+app = FastAPI(title="MurphyBot API", version="2.0.0")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # tighten before production
+    allow_origins=["*"],   # tighten to Lovable URL before production
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-app.include_router(chat.router, prefix="/chat", tags=["chat"])
 app.include_router(consultation.router, prefix="/consultation", tags=["consultation"])
-app.include_router(profile.router, prefix="/profile", tags=["profile"])
+app.include_router(profile.router,      prefix="/profile",      tags=["profile"])
+
 
 @app.get("/health")
 def health():
-    return {"status": "ok"}
+    return {"status": "ok", "version": "2.0.0"}
