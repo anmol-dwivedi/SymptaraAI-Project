@@ -46,6 +46,7 @@ const Index = () => {
     downloadReport,
     downloadReportAsPDF,
     setLocation,
+    refreshProfile,
   } = useConsultation();
 
   const [identityOpen,       setIdentityOpen]       = useState(false);
@@ -323,6 +324,7 @@ const Index = () => {
       <MedicalInfoDrawer
         open={medicalOpen}
         onClose={() => setMedicalOpen(false)}
+        onSaved={refreshProfile}
       />
     </div>
   );

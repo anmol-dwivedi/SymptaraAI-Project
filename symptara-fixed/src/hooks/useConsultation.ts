@@ -325,6 +325,13 @@ export function useConsultation() {
     }
   }, [state.session_id, messages]);
 
+  // Called by MedicalInfoDrawer after successful save.
+  // Backend fetches profile fresh from Supabase on every triage call,
+  // so next message send will automatically use the newly saved profile.
+  const refreshProfile = useCallback(() => {
+    // intentional no-op — profile is read server-side per turn
+  }, []);
+
   return {
     state,
     messages,
@@ -341,6 +348,7 @@ export function useConsultation() {
     downloadReport,
     downloadReportAsPDF,
     setLocation,
+    refreshProfile,
   };
 }
 
