@@ -43,10 +43,23 @@ const WelcomeMessage = () => (
 
 const DISCLAIMER = "This is not a medical diagnosis. Please consult a qualified doctor.";
 
+// Also catch common variations Claude uses in post-conclusion responses
+const DISCLAIMER_PATTERNS = [
+  DISCLAIMER,
+  "This is informational — please follow up with your healthcare provider",
+  "This is informational - please follow up with your healthcare provider",
+  "please follow up with your healthcare provider immediately",
+  "This is informational, not a clinical diagnosis",
+];
+
 function splitDisclaimer(content: string): { body: string; hasDisclaimer: boolean } {
-  const idx = content.indexOf(DISCLAIMER);
-  if (idx === -1) return { body: content, hasDisclaimer: false };
-  return { body: content.slice(0, idx).trimEnd(), hasDisclaimer: true };
+  for (const pattern of DISCLAIMER_PATTERNS) {
+    const idx = content.indexOf(pattern);
+    if (idx !== -1) {
+      return { body: content.slice(0, idx).trimEnd(), hasDisclaimer: true };
+    }
+  }
+  return { body: content, hasDisclaimer: false };
 }
 
 const MessageList = ({ messages, isLoading }: MessageListProps) => {

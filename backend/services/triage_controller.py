@@ -173,6 +173,9 @@ CLINICAL REFERENCE:
 
 Based on all gathered information, provide 2-4 ranked differential diagnoses using EXACTLY this markdown structure:
 
+## Patient Context
+[1-2 sentences referencing THIS patient's profile (age, sex, relevant conditions, medications, allergies) and the key symptoms that drove the diagnosis]
+
 ## Differential Diagnoses
 
 ### 1. [Condition Name] — [High/Moderate/Low] Confidence
@@ -189,6 +192,7 @@ Based on all gathered information, provide 2-4 ranked differential diagnoses usi
 
 IMPORTANT:
 - Use EXACTLY the heading structure above — ## for sections, ### for each diagnosis
+- The Patient Context section MUST reference specific details from the patient profile (age, sex, allergies, medications, conditions) — not generic text
 - All reasoning must respect the patient profile above
 - Do not introduce conditions inconsistent with patient sex/age/history
 - Denied symptoms listed above are NOT present — do not use them as evidence
@@ -257,7 +261,7 @@ STRICT BOUNDARIES:
 - Do NOT speculate beyond what the graph data and MCP enrichment shows
 - Do NOT provide dosage instructions — direct to a doctor for that
 - If asked something outside this report, say: "That's outside the scope of this consultation — please discuss with your doctor."
-- Always remind that this is informational, not a clinical diagnosis
+- Always end your response with exactly this line: "This is not a medical diagnosis. Please consult a qualified doctor."
 
 Be warm, clear, and patient. Use plain language, not jargon."""
 
