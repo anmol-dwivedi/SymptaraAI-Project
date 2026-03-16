@@ -1,6 +1,7 @@
 import { motion } from "framer-motion";
 import { Star, ExternalLink, ChevronDown, ChevronUp, FileText, AlertTriangle, BookOpen, Stethoscope, Pill, FlaskConical, MapPin, TestTubes } from "lucide-react";
 import { useState } from "react";
+import ReactMarkdown from "react-markdown";
 import type { ResultsData } from "@/types/consultation";
 
 const sectionAnim = {
@@ -62,7 +63,7 @@ const ResultsDashboard = ({ results }: { results: ResultsData }) => {
   const [guidelineOpen, setGuidelineOpen] = useState<number | null>(null);
   const hasAny = results.diagnoses.length || results.tests.length || results.medications.length ||
     results.interactions.length || results.doctors.length || results.pubmed.length ||
-    results.guidelines.length || results.fileAnalysis;
+    results.guidelines.length || results.fileAnalyses.length;
 
   if (!hasAny) return null;
 
@@ -236,11 +237,24 @@ const ResultsDashboard = ({ results }: { results: ResultsData }) => {
         </Section>
       )}
 
-      {/* File Analysis */}
-      {results.fileAnalysis && (
+      {/* File Analyses */}
+      {results.fileAnalyses.length > 0 && (
         <Section title="Uploaded File Analysis" icon={<FileText size={14} />}>
-          <div className="rounded-lg border border-border bg-card p-3 text-sm text-muted-foreground whitespace-pre-wrap">
-            {results.fileAnalysis}
+          <div className="space-y-3">
+            {results.fileAnalyses.map((f, i) => (
+              <div key={i} className="rounded-lg border border-border bg-card overflow-hidden">
+                <div className="flex items-center gap-2 border-b border-border bg-muted/30 px-3 py-2">
+                  <FileText size={12} className="text-primary shrink-0" />
+                  <span className="text-xs font-medium text-foreground truncate">{f.filename}</span>
+                  <span className="ml-auto text-[10px] text-muted-foreground shrink-0">File {i + 1}</span>
+                </div>
+                <div className="p-3">
+                  <div className="prose-symptara">
+                    <ReactMarkdown>{f.analysis}</ReactMarkdown>
+                  </div>
+                </div>
+              </div>
+            ))}
           </div>
         </Section>
       )}

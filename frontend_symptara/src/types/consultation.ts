@@ -128,5 +128,5 @@ export interface ResultsData {
   pubmed:         PubmedPaper[];
   guidelines:     ClinicalGuideline[];
   specialistType: string | null;
-  fileAnalysis:   string | null;
+  fileAnalyses:   { filename: string; analysis: string }[];
 }

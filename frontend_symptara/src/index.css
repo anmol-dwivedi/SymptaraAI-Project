@@ -132,50 +132,77 @@
   color: hsl(var(--foreground));
 }
 
-.prose-symptara h1,
-.prose-symptara h2 {
+/* Force all text-bearing elements to foreground — no inheritance surprises */
+.prose-symptara p,
+.prose-symptara li,
+.prose-symptara td,
+.prose-symptara th,
+.prose-symptara span,
+.prose-symptara a {
+  color: hsl(var(--foreground));
+}
+
+.prose-symptara h1 {
   font-family: "Space Grotesk", system-ui, sans-serif;
   font-weight: 600;
+  font-size: 0.95rem;
   color: hsl(var(--foreground));
   margin-top: 1rem;
   margin-bottom: 0.35rem;
   line-height: 1.3;
 }
-.prose-symptara h1 { font-size: 0.95rem; }
-.prose-symptara h2 { font-size: 0.875rem; border-bottom: 1px solid hsl(var(--border)); padding-bottom: 0.2rem; }
 
+/* h2 — section titles like "Differential Diagnoses", "Recommendation" */
+.prose-symptara h2 {
+  font-family: "Space Grotesk", system-ui, sans-serif;
+  font-weight: 700;
+  font-size: 0.75rem;
+  color: hsl(var(--secondary));
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  margin-top: 1.2rem;
+  margin-bottom: 0.5rem;
+  padding-bottom: 0.25rem;
+  border-bottom: 1px solid hsl(var(--secondary) / 0.25);
+  line-height: 1.3;
+}
+
+/* h3 — individual diagnoses, separated with breathing room */
 .prose-symptara h3 {
   font-family: "Space Grotesk", system-ui, sans-serif;
-  font-size: 0.8rem;
+  font-size: 0.875rem;
   font-weight: 600;
   color: hsl(var(--primary));
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  margin-top: 0.85rem;
-  margin-bottom: 0.25rem;
-  line-height: 1.3;
+  margin-top: 1.1rem;
+  margin-bottom: 0.3rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid hsl(var(--border));
+  line-height: 1.4;
 }
 
 .prose-symptara h1:first-child,
 .prose-symptara h2:first-child,
-.prose-symptara h3:first-child { margin-top: 0; }
+.prose-symptara h3:first-child {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: none;
+}
 
 .prose-symptara p {
-  margin-bottom: 0.6rem;
-  color: hsl(var(--foreground));
+  margin-bottom: 0.5rem;
 }
 .prose-symptara p:last-child { margin-bottom: 0; }
 
 .prose-symptara ul,
 .prose-symptara ol {
-  margin: 0.35rem 0 0.6rem 1.1rem;
+  margin: 0.3rem 0 0.5rem 1.1rem;
   display: flex;
   flex-direction: column;
   gap: 0.2rem;
 }
 .prose-symptara ul { list-style-type: disc; }
 .prose-symptara ol { list-style-type: decimal; }
-.prose-symptara li { color: hsl(var(--foreground)); padding-left: 0.2rem; }
+.prose-symptara li { padding-left: 0.2rem; }
 .prose-symptara li::marker { color: hsl(var(--primary)); }
 
 .prose-symptara strong {
@@ -185,7 +212,7 @@
 
 .prose-symptara em {
   font-style: italic;
-  color: hsl(var(--muted-foreground));
+  color: hsl(var(--foreground));
 }
 
 .prose-symptara hr {
@@ -198,7 +225,7 @@
   border-left: 2px solid hsl(var(--primary) / 0.5);
   padding-left: 0.75rem;
   margin: 0.5rem 0;
-  color: hsl(var(--muted-foreground));
+  color: hsl(var(--foreground) / 0.8);
   font-style: italic;
 }
 
@@ -209,6 +236,26 @@
   color: hsl(var(--primary));
   padding: 0.1rem 0.35rem;
   border-radius: 4px;
+}
+
+.prose-symptara a {
+  color: hsl(var(--primary));
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+/* ── Disclaimer line — always glows to capture attention ─────────────────── */
+.prose-symptara-disclaimer {
+  display: block;
+  margin-top: 1rem;
+  padding: 0.5rem 0.75rem;
+  font-size: 0.8rem;
+  font-weight: 500;
+  color: hsl(var(--primary));
+  border: 1px solid hsl(var(--primary) / 0.35);
+  border-radius: 6px;
+  background: hsl(var(--primary) / 0.06);
+  box-shadow: 0 0 12px hsl(var(--primary) / 0.2), 0 0 24px hsl(var(--primary) / 0.08);
 }
 
 /* Custom scrollbar */

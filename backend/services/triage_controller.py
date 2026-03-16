@@ -171,23 +171,31 @@ KNOWLEDGE GRAPH RESULTS (derived from peer-reviewed PrimeKG — these match rati
 CLINICAL REFERENCE:
 {vector_ctx[:2000]}
 
-Based on all gathered information, provide 2-4 ranked differential diagnoses.
+Based on all gathered information, provide 2-4 ranked differential diagnoses using EXACTLY this markdown structure:
 
-For each diagnosis:
-1. Condition name + confidence level derived from graph match ratio
-2. Key symptoms from THIS patient supporting this diagnosis
-3. Why it ranks above or below others given THIS patient's profile
-4. Recommended next steps (tests, specialist, urgency)
-5. Red flag symptoms requiring emergency care
+## Differential Diagnoses
+
+### 1. [Condition Name] — [High/Moderate/Low] Confidence
+**Supporting symptoms:** [symptoms from THIS patient]
+**Reasoning:** [why this ranks here given profile + graph scores]
+**Next steps:** [specific tests, specialist, urgency]
+**Red flags:** [symptoms requiring emergency care]
+
+### 2. [Condition Name] — [High/Moderate/Low] Confidence
+... (repeat pattern)
+
+## Recommendation
+[1-2 sentence overall recommendation based on urgency]
 
 IMPORTANT:
+- Use EXACTLY the heading structure above — ## for sections, ### for each diagnosis
 - All reasoning must respect the patient profile above
 - Do not introduce conditions inconsistent with patient sex/age/history
 - Denied symptoms listed above are NOT present — do not use them as evidence
 - If local time is provided, factor symptom onset timing into urgency assessment
 - Match ratios from the knowledge graph are ground truth scores
 
-End with exactly: "This is not a medical diagnosis. Please consult a qualified doctor.\""""
+End with exactly this line on its own: "This is not a medical diagnosis. Please consult a qualified doctor.\""""
 
 
 def _build_post_conclusion_prompt(context: dict) -> str:

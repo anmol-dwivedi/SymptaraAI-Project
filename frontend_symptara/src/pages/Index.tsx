@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { Download, RotateCcw, MapPin, AlertTriangle, FileText, Stethoscope } from "lucide-react";
+import { Download, RotateCcw, AlertTriangle, FileText, Stethoscope, MapPin } from "lucide-react";
 import SymptaraLogo from "@/components/SymptaraLogo";
 import ResultsDashboard from "@/components/ResultsDashboard";
 import MessageList from "@/components/MessageList";
@@ -10,6 +10,7 @@ import { UserAccountDropdown } from "@/components/UserAccountDropdown";
 import { useConsultation } from "@/hooks/useConsultation";
 
 const IDENTITY_KEY = "symptara_user_identity";
+const LOCATION_DECIDED_KEY = "symptara_location_decided";
 
 const StateBadge = ({ state }: { state: string }) => {
   const styles: Record<string, string> = {
@@ -29,6 +30,91 @@ const StateBadge = ({ state }: { state: string }) => {
   );
 };
 
+// ── Location toggle switch ────────────────────────────────────────────────────
+const LocationToggle = ({
+  enabled,
+  locationText,
+  onEnable,
+  onDisable,
+}: {
+  enabled: boolean;
+  locationText: string | null;
+  onEnable: () => void;
+  onDisable: () => void;
+}) => (
+  <button
+    onClick={enabled ? onDisable : onEnable}
+    className={`flex items-center gap-2 rounded-lg border px-3 py-1.5 text-xs font-medium transition-all ${
+      enabled
+        ? "border-success/40 bg-success/10 text-success hover:bg-success/20"
+        : "border-border bg-muted/50 text-muted-foreground hover:bg-muted hover:text-foreground"
+    }`}
+    title={enabled ? `Location: ${locationText || "acquiring…"}` : "Enable location access"}
+  >
+    <MapPin size={13} className="shrink-0" />
+    {/* Toggle track */}
+    <span
+      className={`relative inline-flex h-4 w-7 items-center rounded-full transition-colors ${
+        enabled ? "bg-success" : "bg-border"
+      }`}
+    >
+      <span
+        className={`inline-block h-3 w-3 rounded-full bg-white shadow transition-transform ${
+          enabled ? "translate-x-3.5" : "translate-x-0.5"
+        }`}
+      />
+    </span>
+    <span className="hidden sm:inline">
+      {enabled ? (locationText || "Acquiring…") : "Location Access"}
+    </span>
+  </button>
+);
+
+// ── Non-skippable location modal ──────────────────────────────────────────────
+const LocationModal = ({
+  onAllow,
+  onDeny,
+}: {
+  onAllow: () => void;
+  onDeny: () => void;
+}) => (
+  <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm">
+    <div className="w-full max-w-sm rounded-xl border border-border bg-card p-6 shadow-2xl mx-4">
+      <div className="mb-4 flex items-center gap-3">
+        <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/15 border border-primary/30">
+          <MapPin size={20} className="text-primary" />
+        </div>
+        <div>
+          <h2 className="font-display text-base font-semibold text-foreground">Location Access</h2>
+          <p className="text-xs text-muted-foreground">Required to find nearby doctors</p>
+        </div>
+      </div>
+
+      <p className="mb-5 text-sm text-muted-foreground leading-relaxed">
+        Symptara uses your location to recommend the most relevant specialists and nearby clinics
+        at the end of your consultation. You can revoke access at any time using the toggle in the header.
+      </p>
+
+      <div className="flex flex-col gap-2">
+        <button
+          onClick={onAllow}
+          className="flex w-full items-center justify-center gap-2 rounded-lg bg-primary py-2.5 text-sm font-semibold text-primary-foreground transition-all hover:brightness-110 active:scale-95"
+        >
+          <MapPin size={14} />
+          Allow Location Access
+        </button>
+        <button
+          onClick={onDeny}
+          className="flex w-full items-center justify-center rounded-lg border border-border bg-muted/30 py-2.5 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+        >
+          Continue Without Location
+        </button>
+      </div>
+    </div>
+  </div>
+);
+
+// ── Main page ─────────────────────────────────────────────────────────────────
 const Index = () => {
   const {
     state,
@@ -46,24 +132,22 @@ const Index = () => {
     downloadReport,
     downloadReportAsPDF,
     setLocation,
+    clearLocation,
     refreshProfile,
   } = useConsultation();
 
-  const [identityOpen,       setIdentityOpen]       = useState(false);
-  const [medicalOpen,        setMedicalOpen]         = useState(false);
-  const [locationAsked,      setLocationAsked]       = useState(false);
-  const [showLocationBanner, setShowLocationBanner]  = useState(true);
+  const [identityOpen,   setIdentityOpen]   = useState(false);
+  const [medicalOpen,    setMedicalOpen]     = useState(false);
+  // true = location ON, false = location OFF, null = not yet decided (shows modal)
+  const [locationOn,     setLocationOn]      = useState<boolean | null>(null);
 
-  // Auto-request geolocation if already granted
+  // On mount: show modal unless user has already decided this session
   useEffect(() => {
-    if (locationAsked) return;
-    if (navigator.permissions) {
-      navigator.permissions
-        .query({ name: "geolocation" })
-        .then((result) => { if (result.state === "granted") captureLocation(); })
-        .catch(() => {});
-    }
-  }, [locationAsked]);
+    const decided = sessionStorage.getItem(LOCATION_DECIDED_KEY);
+    if (decided === "true")  { setLocationOn(true);  }
+    else if (decided === "false") { setLocationOn(false); }
+    else { setLocationOn(null); } // show modal
+  }, []);
 
   // Reverse geocode via OpenStreetMap Nominatim (free, no key needed)
   const reverseGeocode = async (lat: number, lng: number): Promise<string> => {
@@ -85,23 +169,37 @@ const Index = () => {
     }
   };
 
-  const captureLocation = useCallback(() => {
-    setLocationAsked(true);
-    setShowLocationBanner(false);
+  const enableLocation = useCallback(() => {
     navigator.geolocation.getCurrentPosition(
       async (pos) => {
         const { latitude, longitude } = pos.coords;
         const locationText = await reverseGeocode(latitude, longitude);
         setLocation(latitude, longitude, locationText);
+        setLocationOn(true);
+        sessionStorage.setItem(LOCATION_DECIDED_KEY, "true");
       },
-      () => {},
+      () => {
+        // Browser denied — still mark as decided so modal doesn't re-appear
+        setLocationOn(false);
+        sessionStorage.setItem(LOCATION_DECIDED_KEY, "false");
+      },
       { timeout: 10000 }
     );
+    setLocationOn(true);
+    sessionStorage.setItem(LOCATION_DECIDED_KEY, "true");
   }, [setLocation]);
 
-  const skipLocation = () => {
-    setLocationAsked(true);
-    setShowLocationBanner(false);
+  const disableLocation = useCallback(() => {
+    clearLocation();
+    setLocationOn(false);
+    sessionStorage.setItem(LOCATION_DECIDED_KEY, "false");
+  }, [clearLocation]);
+
+  // Modal handlers
+  const handleModalAllow = () => enableLocation();
+  const handleModalDeny  = () => {
+    setLocationOn(false);
+    sessionStorage.setItem(LOCATION_DECIDED_KEY, "false");
   };
 
   const handleNewSession = () => {
@@ -110,13 +208,18 @@ const Index = () => {
       !window.confirm("Start a new consultation? Current session will be closed.")
     ) return;
     newSession();
-    setShowLocationBanner(!locationAsked);
+    // Reset location decision — show modal again on new session
+    sessionStorage.removeItem(LOCATION_DECIDED_KEY);
+    clearLocation();
+    setLocationOn(null);
   };
 
-  // Sign out — clears localStorage identity and resets the session
   const handleSignOut = () => {
     if (!window.confirm("Sign out? Your local profile data will be cleared.")) return;
     localStorage.removeItem(IDENTITY_KEY);
+    sessionStorage.removeItem(LOCATION_DECIDED_KEY);
+    clearLocation();
+    setLocationOn(null);
     newSession();
   };
 
@@ -128,13 +231,18 @@ const Index = () => {
     results.doctors.length      ||
     results.pubmed.length       ||
     results.guidelines.length   ||
-    results.fileAnalysis;
+    results.fileAnalyses.length;
 
   const displayState      = state.is_post_conclusion ? "POST_CONCLUSION" : state.state;
   const canDownloadReport = state.is_conclusion || state.is_post_conclusion;
 
   return (
     <div className="flex h-screen flex-col bg-background">
+
+      {/* ── Location modal — non-skippable, shown until user decides ─────── */}
+      {locationOn === null && (
+        <LocationModal onAllow={handleModalAllow} onDeny={handleModalDeny} />
+      )}
 
       {/* ── Header ─────────────────────────────────────────────────────────── */}
       <header className="flex items-center justify-between border-b border-border px-4 py-3 lg:px-6">
@@ -170,6 +278,16 @@ const Index = () => {
               <FileText size={13} className="shrink-0" />
               <span className="hidden sm:inline">Report Conversion</span>
             </button>
+          )}
+
+          {/* Location Access toggle — persistent, always visible */}
+          {locationOn !== null && (
+            <LocationToggle
+              enabled={locationOn}
+              locationText={state.location_text}
+              onEnable={enableLocation}
+              onDisable={disableLocation}
+            />
           )}
 
           {/* Connection status dot */}
@@ -263,30 +381,6 @@ const Index = () => {
             <StateBadge state={displayState} />
           </div>
 
-          {/* Location Banner */}
-          {showLocationBanner && !locationAsked && (
-            <div className="flex items-center justify-between border-b border-border bg-muted/30 px-4 py-2">
-              <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                <MapPin size={12} />
-                Allow location access for nearby doctor recommendations
-              </div>
-              <div className="flex gap-2">
-                <button
-                  onClick={captureLocation}
-                  className="rounded-md bg-primary/10 px-2.5 py-1 text-xs text-primary hover:bg-primary/20 transition-colors"
-                >
-                  Allow
-                </button>
-                <button
-                  onClick={skipLocation}
-                  className="rounded-md px-2.5 py-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
-                >
-                  Skip
-                </button>
-              </div>
-            </div>
-          )}
-
           <FileDropZone
             onUpload={uploadFile}
             onRemoveFile={removeFile}
@@ -315,12 +409,10 @@ const Index = () => {
       </footer>
 
       {/* ── Drawers ─────────────────────────────────────────────────────────── */}
-      {/* Identity drawer — opened from dropdown "Edit Profile" */}
       <IdentityDrawer
         open={identityOpen}
         onClose={() => setIdentityOpen(false)}
       />
-      {/* Medical info drawer — opened from Medical Info button */}
       <MedicalInfoDrawer
         open={medicalOpen}
         onClose={() => setMedicalOpen(false)}

@@ -42,7 +42,7 @@ const initialResults: ResultsData = {
   pubmed: [],
   guidelines: [],
   specialistType: null,
-  fileAnalysis: null,
+  fileAnalyses: [],
 };
 
 // ── API response → frontend type mappers ──────────────────────────────────────
@@ -160,6 +160,10 @@ export function useConsultation() {
     setState((s) => ({ ...s, lat, lng, location_text: text }));
   }, []);
 
+  const clearLocation = useCallback(() => {
+    setState((s) => ({ ...s, lat: null, lng: null, location_text: null }));
+  }, []);
+
   const sendMessage = useCallback(
     async (message: string, inputMethod: "text" | "voice" = "text") => {
       const userMsg: Message = {
@@ -254,7 +258,10 @@ export function useConsultation() {
         const data = await api.uploadFile(state.session_id, USER_ID, file);
         setState((s) => ({ ...s, file_analysis: data.analysis }));
         setUploadedFileName(file.name);
-        setResults((r) => ({ ...r, fileAnalysis: data.analysis }));
+        setResults((r) => ({
+          ...r,
+          fileAnalyses: [...r.fileAnalyses, { filename: file.name, analysis: data.analysis }],
+        }));
       } catch {
         setApiConnected(false);
       } finally {
@@ -267,7 +274,6 @@ export function useConsultation() {
   const removeFile = useCallback(() => {
     setState((s) => ({ ...s, file_analysis: null }));
     setUploadedFileName(null);
-    setResults((r) => ({ ...r, fileAnalysis: null }));
   }, []);
 
   const newSession = useCallback(async () => {
@@ -357,6 +363,7 @@ export function useConsultation() {
     downloadReport,
     downloadReportAsPDF,
     setLocation,
+    clearLocation,
     refreshProfile,
   };
 }

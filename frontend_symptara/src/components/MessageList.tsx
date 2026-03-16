@@ -41,6 +41,14 @@ const WelcomeMessage = () => (
   </motion.div>
 );
 
+const DISCLAIMER = "This is not a medical diagnosis. Please consult a qualified doctor.";
+
+function splitDisclaimer(content: string): { body: string; hasDisclaimer: boolean } {
+  const idx = content.indexOf(DISCLAIMER);
+  if (idx === -1) return { body: content, hasDisclaimer: false };
+  return { body: content.slice(0, idx).trimEnd(), hasDisclaimer: true };
+}
+
 const MessageList = ({ messages, isLoading }: MessageListProps) => {
   const endRef = useRef<HTMLDivElement>(null);
 
@@ -70,9 +78,21 @@ const MessageList = ({ messages, isLoading }: MessageListProps) => {
                   msg.isPostConclusion ? "border-secondary" : "border-primary"
                 }`}
               >
-                <div className="prose-symptara">
-                  <ReactMarkdown>{msg.content}</ReactMarkdown>
-                </div>
+                {(() => {
+                  const { body, hasDisclaimer } = splitDisclaimer(msg.content);
+                  return (
+                    <>
+                      <div className="prose-symptara">
+                        <ReactMarkdown>{body}</ReactMarkdown>
+                      </div>
+                      {hasDisclaimer && (
+                        <span className="prose-symptara-disclaimer">
+                          ⚕ {DISCLAIMER}
+                        </span>
+                      )}
+                    </>
+                  );
+                })()}
               </div>
             )}
           </motion.div>
