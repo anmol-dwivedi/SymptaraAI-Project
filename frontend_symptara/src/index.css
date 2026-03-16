@@ -1,0 +1,141 @@
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=Inter:wght@300;400;500;600;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 240 33% 4%;
+    --foreground: 0 0% 100%;
+
+    --card: 240 24% 9%;
+    --card-foreground: 0 0% 100%;
+
+    --popover: 240 24% 9%;
+    --popover-foreground: 0 0% 100%;
+
+    --primary: 189 100% 50%;
+    --primary-foreground: 240 33% 4%;
+
+    --secondary: 264 100% 59%;
+    --secondary-foreground: 0 0% 100%;
+
+    --muted: 240 18% 14%;
+    --muted-foreground: 233 14% 60%;
+
+    --accent: 264 100% 59%;
+    --accent-foreground: 0 0% 100%;
+
+    --destructive: 0 100% 62%;
+    --destructive-foreground: 0 0% 100%;
+
+    --success: 150 100% 50%;
+    --success-foreground: 240 33% 4%;
+
+    --warning: 43 100% 50%;
+    --warning-foreground: 240 33% 4%;
+
+    --emergency: 0 100% 62%;
+
+    --border: 240 18% 19%;
+    --input: 240 18% 19%;
+    --ring: 189 100% 50%;
+
+    --radius: 0.75rem;
+
+    --panel: 240 28% 7%;
+    --panel-foreground: 0 0% 100%;
+
+    --user-bubble: 270 46% 20%;
+    --system-border: 189 100% 50%;
+    --post-conclusion-border: 264 100% 59%;
+
+    --sidebar-background: 240 28% 7%;
+    --sidebar-foreground: 0 0% 100%;
+    --sidebar-primary: 189 100% 50%;
+    --sidebar-primary-foreground: 240 33% 4%;
+    --sidebar-accent: 264 100% 59%;
+    --sidebar-accent-foreground: 0 0% 100%;
+    --sidebar-border: 240 18% 19%;
+    --sidebar-ring: 189 100% 50%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground font-sans antialiased;
+  }
+}
+
+@layer utilities {
+  .gradient-primary {
+    background: linear-gradient(135deg, hsl(var(--primary)), hsl(var(--secondary)));
+  }
+  .gradient-text {
+    background: linear-gradient(135deg, hsl(var(--primary)), hsl(var(--secondary)));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+  .glow-primary {
+    box-shadow: 0 0 20px hsl(var(--primary) / 0.3), 0 0 40px hsl(var(--primary) / 0.1);
+  }
+  .glow-emergency {
+    box-shadow: 0 0 20px hsl(var(--emergency) / 0.4), 0 0 60px hsl(var(--emergency) / 0.2);
+  }
+  .panel-bg {
+    background-color: hsl(var(--panel));
+  }
+  .card-bg {
+    background-color: hsl(var(--card));
+  }
+}
+
+@keyframes pulse-ring {
+  0% { transform: scale(1); opacity: 0.8; }
+  100% { transform: scale(1.5); opacity: 0; }
+}
+
+@keyframes typing-dot {
+  0%, 60%, 100% { transform: translateY(0); }
+  30% { transform: translateY(-6px); }
+}
+
+@keyframes heartbeat {
+  0%, 100% { transform: scale(1); }
+  14% { transform: scale(1.15); }
+  28% { transform: scale(1); }
+  42% { transform: scale(1.1); }
+  56% { transform: scale(1); }
+}
+
+.animate-pulse-ring {
+  animation: pulse-ring 1.2s ease-out infinite;
+}
+
+.animate-typing-1 { animation: typing-dot 1.4s ease-in-out infinite; }
+.animate-typing-2 { animation: typing-dot 1.4s ease-in-out 0.2s infinite; }
+.animate-typing-3 { animation: typing-dot 1.4s ease-in-out 0.4s infinite; }
+
+.animate-heartbeat {
+  animation: heartbeat 1.5s ease-in-out infinite;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+}
+::-webkit-scrollbar-track {
+  background: hsl(var(--background));
+}
+::-webkit-scrollbar-thumb {
+  background: hsl(var(--border));
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: hsl(var(--muted-foreground));
+}

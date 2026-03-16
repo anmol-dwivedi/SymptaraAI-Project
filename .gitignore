@@ -37,3 +37,14 @@ logs/
 .DS_Store
 Thumbs.db
 medical-mcp/
+
+
+# zip files
+.zip
+*.zip
+structure.txt
+__pycache__/
+*.pyc
+.venv/
+venv/
+node_modules/
