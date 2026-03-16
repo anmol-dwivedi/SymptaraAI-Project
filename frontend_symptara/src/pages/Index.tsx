@@ -328,7 +328,7 @@ const Index = () => {
 
         {/* Left Panel — Results Dashboard */}
         <div className="flex flex-col border-b border-border lg:w-[55%] lg:border-b-0 lg:border-r overflow-hidden">
-          <div className="flex items-center justify-between border-b border-border px-4 py-2">
+          <div className="flex h-10 items-center justify-between border-b border-border px-4">
             <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
               Results Dashboard
             </span>
@@ -374,7 +374,7 @@ const Index = () => {
             displayState === "POST_CONCLUSION" ? "bg-primary/[0.02]" : ""
           }`}
         >
-          <div className="flex items-center justify-between border-b border-border px-4 py-2">
+          <div className="flex h-10 items-center justify-between border-b border-border px-4">
             <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
               Consultation
             </span>
