@@ -1,6 +1,7 @@
 import { useRef, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Heart } from "lucide-react";
+import ReactMarkdown from "react-markdown";
 import type { Message } from "@/types/consultation";
 
 interface MessageListProps {
@@ -40,7 +41,7 @@ const WelcomeMessage = () => (
   </motion.div>
 );
 
-const MessageList = ({ messages, isLoading, isPostConclusion }: MessageListProps) => {
+const MessageList = ({ messages, isLoading }: MessageListProps) => {
   const endRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -65,13 +66,13 @@ const MessageList = ({ messages, isLoading, isPostConclusion }: MessageListProps
               </div>
             ) : (
               <div
-                className={`max-w-[85%] rounded-lg border-l-2 px-4 py-2.5 text-sm text-foreground bg-card ${
-                  msg.isPostConclusion
-                    ? "border-secondary"
-                    : "border-primary"
+                className={`max-w-[85%] rounded-lg border-l-2 px-4 py-3 bg-card ${
+                  msg.isPostConclusion ? "border-secondary" : "border-primary"
                 }`}
               >
-                <div className="whitespace-pre-wrap">{msg.content}</div>
+                <div className="prose-symptara">
+                  <ReactMarkdown>{msg.content}</ReactMarkdown>
+                </div>
               </div>
             )}
           </motion.div>

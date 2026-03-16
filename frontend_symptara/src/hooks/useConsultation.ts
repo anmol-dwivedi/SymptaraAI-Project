@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import type {
   ConsultationState,
   Message,
@@ -149,6 +149,13 @@ export function useConsultation() {
   const [isEmergency, setIsEmergency] = useState(false);
   const [apiConnected, setApiConnected] = useState(true);
 
+  // Auto-create a session on mount so uploads work immediately
+  useEffect(() => {
+    api.newSession(USER_ID, null)
+      .then((data) => setState((s) => ({ ...s, session_id: data.session_id })))
+      .catch(() => {});
+  }, []);
+
   const setLocation = useCallback((lat: number, lng: number, text: string) => {
     setState((s) => ({ ...s, lat, lng, location_text: text }));
   }, []);
@@ -264,12 +271,14 @@ export function useConsultation() {
   }, []);
 
   const newSession = useCallback(async () => {
+    let newSessionId: string | null = null;
     try {
-      await api.newSession(USER_ID, state.session_id);
+      const data = await api.newSession(USER_ID, state.session_id);
+      newSessionId = data.session_id ?? null;
     } catch {
-      // proceed anyway
+      // proceed anyway — session_id stays null, will be created on first message
     }
-    setState(initialState);
+    setState({ ...initialState, session_id: newSessionId });
     setMessages([]);
     setResults(initialResults);
     setIsEmergency(false);

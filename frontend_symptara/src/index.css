@@ -125,6 +125,92 @@
   animation: heartbeat 1.5s ease-in-out infinite;
 }
 
+/* ── Markdown rendering inside chat messages ─────────────────────────────── */
+.prose-symptara {
+  font-size: 0.875rem;
+  line-height: 1.65;
+  color: hsl(var(--foreground));
+}
+
+.prose-symptara h1,
+.prose-symptara h2 {
+  font-family: "Space Grotesk", system-ui, sans-serif;
+  font-weight: 600;
+  color: hsl(var(--foreground));
+  margin-top: 1rem;
+  margin-bottom: 0.35rem;
+  line-height: 1.3;
+}
+.prose-symptara h1 { font-size: 0.95rem; }
+.prose-symptara h2 { font-size: 0.875rem; border-bottom: 1px solid hsl(var(--border)); padding-bottom: 0.2rem; }
+
+.prose-symptara h3 {
+  font-family: "Space Grotesk", system-ui, sans-serif;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: hsl(var(--primary));
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-top: 0.85rem;
+  margin-bottom: 0.25rem;
+  line-height: 1.3;
+}
+
+.prose-symptara h1:first-child,
+.prose-symptara h2:first-child,
+.prose-symptara h3:first-child { margin-top: 0; }
+
+.prose-symptara p {
+  margin-bottom: 0.6rem;
+  color: hsl(var(--foreground));
+}
+.prose-symptara p:last-child { margin-bottom: 0; }
+
+.prose-symptara ul,
+.prose-symptara ol {
+  margin: 0.35rem 0 0.6rem 1.1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+.prose-symptara ul { list-style-type: disc; }
+.prose-symptara ol { list-style-type: decimal; }
+.prose-symptara li { color: hsl(var(--foreground)); padding-left: 0.2rem; }
+.prose-symptara li::marker { color: hsl(var(--primary)); }
+
+.prose-symptara strong {
+  font-weight: 600;
+  color: hsl(var(--foreground));
+}
+
+.prose-symptara em {
+  font-style: italic;
+  color: hsl(var(--muted-foreground));
+}
+
+.prose-symptara hr {
+  border: none;
+  border-top: 1px solid hsl(var(--border));
+  margin: 0.75rem 0;
+}
+
+.prose-symptara blockquote {
+  border-left: 2px solid hsl(var(--primary) / 0.5);
+  padding-left: 0.75rem;
+  margin: 0.5rem 0;
+  color: hsl(var(--muted-foreground));
+  font-style: italic;
+}
+
+.prose-symptara code {
+  font-family: ui-monospace, monospace;
+  font-size: 0.78rem;
+  background: hsl(var(--muted));
+  color: hsl(var(--primary));
+  padding: 0.1rem 0.35rem;
+  border-radius: 4px;
+}
+
 /* Custom scrollbar */
 ::-webkit-scrollbar {
   width: 6px;
