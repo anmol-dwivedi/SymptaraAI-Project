@@ -296,7 +296,7 @@ symptara/
 
 ## Environment Variables
 
-Create a `.env` file in the `backend/` directory:
+Create a `.env` file in the `root` directory:
 
 ```env
 # Anthropic
