@@ -11,7 +11,7 @@ os.environ["LANGCHAIN_TRACING_V2"] = "true"
 os.environ["LANGCHAIN_API_KEY"]    = settings.langchain_api_key
 os.environ["LANGCHAIN_PROJECT"]    = settings.langchain_project
 
-app = FastAPI(title="MurphyBot API", version="2.0.0")
+app = FastAPI(title="Symptara API", version="2.0.0")
 
 app.add_middleware(
     CORSMiddleware,

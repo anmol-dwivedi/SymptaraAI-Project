@@ -16,7 +16,7 @@ class Settings(BaseSettings):
     supabase_service_key: str = ""
     google_maps_api_key: str = ""
     langchain_api_key: str
-    langchain_project: str = "murphybot"
+    langchain_project: str = "symptara"
     chroma_path: str = "./chroma_db"
     md_folder: str = "./docling_output"
     

@@ -395,7 +395,6 @@ create table session_files (
 ### Backend
 
 ```bash
-cd backend
 pip install -r requirements.txt
 cp .env.example .env      # fill in your keys
 uvicorn backend.main:app --reload --port 8001
