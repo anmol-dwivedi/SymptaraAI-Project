@@ -365,6 +365,20 @@ Place your medical reference PDFs in the `docling_output/` folder and run the em
 
 ---
 
+## Anti-Hallucination Layers
+
+Symptara uses five layered defences against LLM hallucination:
+
+| Layer | Mechanism |
+|-------|-----------|
+| **Layer 1** | Patient profile injected as "ground truth" into every system prompt — Claude cannot contradict it |
+| **Layer 2** | PrimeKG match ratios presented as factual scores — Claude cannot reorder or contradict graph-derived rankings |
+| **Layer 3** | Python controls all state transitions — Claude can never self-advance the triage state |
+| **Layer 4** | POST_CONCLUSION strictly scoped — Claude can only explain the existing report, cannot introduce new diagnoses |
+| **Layer 5** | Negated symptoms explicitly listed in every prompt — denied symptoms cannot be used as supporting evidence |
+
+---
+
 ## API Reference
 
 All endpoints served at `http://localhost:8001`.
@@ -413,19 +427,6 @@ Returns user profile, or `null` if not found.
 
 ---
 
-## Anti-Hallucination Layers
-
-Symptara uses five layered defences against LLM hallucination:
-
-| Layer | Mechanism |
-|-------|-----------|
-| **Layer 1** | Patient profile injected as "ground truth" into every system prompt — Claude cannot contradict it |
-| **Layer 2** | PrimeKG match ratios presented as factual scores — Claude cannot reorder or contradict graph-derived rankings |
-| **Layer 3** | Python controls all state transitions — Claude can never self-advance the triage state |
-| **Layer 4** | POST_CONCLUSION strictly scoped — Claude can only explain the existing report, cannot introduce new diagnoses |
-| **Layer 5** | Negated symptoms explicitly listed in every prompt — denied symptoms cannot be used as supporting evidence |
-
----
 
 ## Credits & Attribution
 
