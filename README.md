@@ -213,7 +213,7 @@ symptara/
 │               ├── literature.py      # PubMed NCBI E-utilities
 │               └── mcp_client.py      # Compatibility stub
 │
-└── frontend/
+└── frontend_symptara/
     └── src/
         ├── App.tsx                    # React Query, Router, Toasters
         ├── pages/
