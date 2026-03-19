@@ -105,78 +105,20 @@ The result is a consultation that feels like talking to a knowledgeable clinical
 ---
 
 ## System Architecture
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                        Frontend (React)                          │
-│  useConsultation hook → api.ts → FastAPI Backend                 │
-└────────────────────────┬────────────────────────────────────────┘
-                         │
-┌────────────────────────▼────────────────────────────────────────┐
-│                    FastAPI (Python)                               │
-│  /consultation/message  /consultation/upload-file                │
-│  /consultation/report   /profile                                 │
-└────────────────────────┬────────────────────────────────────────┘
-                         │
-┌────────────────────────▼────────────────────────────────────────┐
-│                  Context Assembler                                │
-│                                                                  │
-│  1. Symptom Extractor (Claude)                                   │
-│  2. HPO Mapper (Claude + ChromaDB fallback)                      │
-│  3. Graph Service → Neo4j (PrimeKG)                              │
-│  4. Vector Service → ChromaDB (16 medical books)                 │
-│  5. Memory Service → Supabase                                    │
-│  6. File Analyses → Supabase session_files                        │
-└────────────────────────┬────────────────────────────────────────┘
-                         │
-┌────────────────────────▼────────────────────────────────────────┐
-│                  Triage Controller                                │
-│                                                                  │
-│  GATHERING → NARROWING → CONCLUSION → POST_CONCLUSION            │
-│  (Python controls state, Claude executes each state)             │
-└────────────────────────┬────────────────────────────────────────┘
-                         │
-           ┌─────────────┼──────────────┐
-           ▼             ▼              ▼
-    MCP Enrichment   Doctor Finder   Report Assembler
-    FDA / RxNav      Google Places   Claude Summary
-    PubMed / NLM     GPS / Text      Full JSON Report
-```
+![SymptaraAI System Architecture](Diagrams/System_Architecture.png)
 
 ---
 
 ## The RAG Pipeline
-
 Every user turn triggers the full pipeline before Claude sees anything:
-
-```
-User message
-    │
-    ├─► Symptom Extractor        → Claude: free text → structured JSON
-    │       symptoms, negations, duration, severity
-    │
-    ├─► Symptom Merger           → deduplicate against accumulated list
-    │
-    ├─► HPO Mapper               → Claude maps known terms to HP:XXXXXXX IDs
-    │       └─► Vector Fallback  → ChromaDB hpo_terms collection (distance < 0.6)
-    │
-    ├─► Graph Query              → Neo4j: HPO IDs → PrimeKG diseases
-    │       MATCH (p:Phenotype)-[:ASSOCIATED_WITH]-(d:Disease)
-    │       WHERE p.hpo_id IN $hpo_ids
-    │       ranked by match_ratio = matched / total_known_symptoms
-    │       + drug lookup per disease
-    │
-    ├─► Vector Search            → ChromaDB medical_books collection
-    │       multi-query: combined + per-symptom, top_k=5, deduped by chunk_id
-    │
-    ├─► Profile Fetch            → Supabase user_profiles
-    │
-    └─► File Fetch               → Supabase session_files (all uploads this session)
-            │
-            └─► Assembled Context → Triage Controller
-```
+![SymptaraAI System Architecture](Diagrams/Hybrid_RAG_Pipeline.png)
 
 ---
+
+## Triage State Machine
+![SymptaraAI System Architecture](Diagrams/Triage_State_Machine.png)
+
+
 
 ## Knowledge Sources
 
@@ -403,7 +345,7 @@ uvicorn backend.main:app --reload --port 8001
 ### Frontend
 
 ```bash
-cd frontend
+cd frontend_symptara
 npm install               # or: bun install
 npm run dev               # runs on http://localhost:8080
 ```
