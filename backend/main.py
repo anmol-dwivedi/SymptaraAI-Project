@@ -15,7 +15,9 @@ app = FastAPI(title="Symptara API", version="2.0.0")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],   # tighten to Lovable URL before production
+    allow_origins=[
+        "http://localhost:8080"
+    ],   
     allow_methods=["*"],
     allow_headers=["*"],
 )
