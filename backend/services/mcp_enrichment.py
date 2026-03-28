@@ -23,11 +23,37 @@ from services.mcp.mcp_client import is_mcp_available
 log = logging.getLogger("murphybot.mcp_enrichment")
 
 
+def _extract_top_diagnosis(triage_response: str) -> str:
+    """
+    Extract the primary diagnosis name from Claude's triage conclusion text.
+    Looks for patterns like:
+      '1. Acute Myocardial Infarction — High Confidence'
+      '### 1. Acute Myocardial Infarction'
+      '1. **Acute Myocardial Infarction**'
+    """
+    if not triage_response:
+        return ""
+    import re
+    patterns = [
+        r"(?:^|\n)\s*1[\.\)]\s+\*{0,2}([^—\n\*]+?)\*{0,2}\s*(?:—|-|–)",
+        r"(?:^|\n)\s*#{1,4}\s*1[\.\)]\s+([^—\n]+?)(?:\s*—|\s*$)",
+        r"(?:^|\n)\s*1[\.\)]\s+([A-Z][^—\n]{5,80})(?:\s*—|\s*\n)",
+    ]
+    for pattern in patterns:
+        match = re.search(pattern, triage_response, re.MULTILINE)
+        if match:
+            name = match.group(1).strip().strip("*").strip()
+            if len(name) > 4:
+                return name
+    return ""
+
+
 def enrich_conclusion(
     diagnoses:           list[dict],
     symptoms:            list[str],
     current_medications: list[str] = None,
-    user_profile:        dict = None
+    user_profile:        dict = None,
+    triage_response:     str = ""
 ) -> dict:
     """
     Full MCP enrichment pipeline. Called once on CONCLUSION state.
@@ -62,7 +88,8 @@ def enrich_conclusion(
     if not diagnoses:
         return result
 
-    top_disease = diagnoses[0]["disease"]
+    
+    top_disease = _extract_top_diagnosis(triage_response) or diagnoses[0]["disease"]
 
     # ── 1. FDA Drug Suggestions ───────────────────────────────────────────────
     try:

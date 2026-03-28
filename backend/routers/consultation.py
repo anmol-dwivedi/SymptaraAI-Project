@@ -159,7 +159,8 @@ async def consultation_message(req: ConsultationRequest):
                 diagnoses=context["graph_candidates"],
                 symptoms=context["all_symptoms"],
                 current_medications=current_meds,
-                user_profile=context["user_profile"]
+                user_profile=context["user_profile"],
+                triage_response=triage_result["response"]
             )
         except Exception as e:
             log.warning(f"MCP enrichment failed: {e}")
