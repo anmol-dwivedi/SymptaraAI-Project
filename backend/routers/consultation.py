@@ -8,6 +8,8 @@ Stores them on session conclusion for the medical report.
 import logging
 from fastapi import APIRouter, HTTPException, UploadFile, File, Form
 from pydantic import BaseModel
+from langsmith import traceable
+from langsmith.run_helpers import get_current_run_tree
 from services.context_assembler import assemble_context
 from services.triage_controller import run_triage
 from services.memory_service import (
@@ -19,6 +21,8 @@ from services.file_processor import process_file
 from services.doctor_finder import find_nearby_doctors
 from services.mcp_enrichment import enrich_conclusion
 from services.report_assembler import assemble_report
+from services.quota_service import check_and_increment_quota
+
 
 log    = logging.getLogger("murphybot.consultation")
 router = APIRouter()
@@ -54,7 +58,13 @@ class ConsultationResponse(BaseModel):
     mcp_enrichment:   dict = {}
 
 
+class NewSessionRequest(BaseModel):
+    user_id:    str
+    session_id: str | None = None
+
+
 @router.post("/message", response_model=ConsultationResponse)
+@traceable(name="consultation-message")
 async def consultation_message(req: ConsultationRequest):
     """
     Single endpoint for entire consultation flow including POST_CONCLUSION.
@@ -78,6 +88,16 @@ async def consultation_message(req: ConsultationRequest):
         session_id = req.session_id
     else:
         session_id = create_session(req.user_id)
+
+    # ── LangSmith user context ────────────────────────────────────────────────
+    run = get_current_run_tree()
+    if run:
+        run.extra["metadata"] = {
+            "user_id":      req.user_id,
+            "session_id":   str(session_id),
+            "turn_count":   req.turn_count,
+            "triage_state": "POST_CONCLUSION" if req.is_post_conclusion else "ACTIVE",
+        }
 
     # ── Save user message ─────────────────────────────────────────────────────
     save_message(
@@ -199,14 +219,25 @@ async def consultation_message(req: ConsultationRequest):
 
 
 @router.post("/new-session")
-async def new_session(user_id: str, current_session_id: str | None = None):
+async def new_session(req: NewSessionRequest):
     """New Session button — resets current session and creates fresh one."""
-    if current_session_id:
+    quota = check_and_increment_quota(req.user_id)
+    if not quota["allowed"]:
+        raise HTTPException(
+            status_code=429,
+            detail={
+                "message":       "Daily session limit reached",
+                "limit":         quota["limit"],
+                "reset_at":      quota.get("reset_at"),
+                "sessions_used": quota.get("sessions_used"),
+            }
+        )
+    if req.session_id:
         try:
-            reset_session(current_session_id)
+            reset_session(req.session_id)
         except Exception:
             pass
-    new_sid = create_session(user_id)
+    new_sid = create_session(req.user_id)
     return {"session_id": new_sid, "message": "New session started."}
 
 

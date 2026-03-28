@@ -339,7 +339,8 @@ create table session_files (
 ```bash
 pip install -r requirements.txt
 cp .env.example .env      # fill in your keys
-uvicorn backend.main:app --reload --port 8001
+cd backend
+uvicorn main:app --reload --port 8001
 ```
 
 ### Frontend
