@@ -13,8 +13,25 @@ import type {
   ClinicalGuideline,
 } from "@/types/consultation";
 import { api } from "@/lib/api";
+import { supabase } from "@/lib/supabase";
 
-const USER_ID = "00000000-0000-0000-0000-000000000001";
+// ── Auth helpers ──────────────────────────────────────────────────────────────
+
+async function getCurrentUserId(): Promise<string> {
+  const { data } = await supabase.auth.getSession();
+  const uid = data.session?.user?.id;
+  if (!uid) throw new Error("Not authenticated");
+  return uid;
+}
+
+async function getAuthToken(): Promise<string> {
+  const { data } = await supabase.auth.getSession();
+  const token = data.session?.access_token;
+  if (!token) throw new Error("Not authenticated");
+  return token;
+}
+
+// ── State ─────────────────────────────────────────────────────────────────────
 
 const initialState: ConsultationState = {
   session_id: null,
@@ -44,6 +61,15 @@ const initialResults: ResultsData = {
   specialistType: null,
   fileAnalyses: [],
 };
+
+// ── Quota error type ──────────────────────────────────────────────────────────
+
+export interface QuotaError {
+  type: "quota_exceeded";
+  sessionsUsed: number;
+  limit: number;
+  resetAt: string; // ISO string
+}
 
 // ── API response → frontend type mappers ──────────────────────────────────────
 
@@ -140,21 +166,38 @@ function mapGuidelines(raw: any): ClinicalGuideline[] {
 // ── Main hook ─────────────────────────────────────────────────────────────────
 
 export function useConsultation() {
-  const [state, setState] = useState<ConsultationState>(initialState);
-  const [messages, setMessages] = useState<Message[]>([]);
-  const [results, setResults] = useState<ResultsData>(initialResults);
-  const [isLoading, setIsLoading] = useState(false);
-  const [isUploading, setIsUploading] = useState(false);
+  const [state, setState]                   = useState<ConsultationState>(initialState);
+  const [messages, setMessages]             = useState<Message[]>([]);
+  const [results, setResults]               = useState<ResultsData>(initialResults);
+  const [isLoading, setIsLoading]           = useState(false);
+  const [isUploading, setIsUploading]       = useState(false);
   const [uploadedFileName, setUploadedFileName] = useState<string | null>(null);
-  const [isEmergency, setIsEmergency] = useState(false);
-  const [apiConnected, setApiConnected] = useState(true);
+  const [isEmergency, setIsEmergency]       = useState(false);
+  const [apiConnected, setApiConnected]     = useState(true);
+  const [quotaError, setQuotaError]         = useState<QuotaError | null>(null);
+  const [userId, setUserId]                 = useState<string | null>(null);
 
-  // Auto-create a session on mount so uploads work immediately
+  // Resolve user ID from Supabase session on mount
   useEffect(() => {
-    api.newSession(USER_ID, null)
-      .then((data) => setState((s) => ({ ...s, session_id: data.session_id })))
-      .catch(() => {});
+    getCurrentUserId()
+      .then(setUserId)
+      .catch(() => setUserId(null));
+
+    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUserId(session?.user?.id ?? null);
+    });
+    return () => listener.subscription.unsubscribe();
   }, []);
+
+  // Auto-create a session once we have a user ID
+  useEffect(() => {
+    if (!userId) return;
+    getAuthToken().then((token) =>
+      api.newSession(userId, null, token)
+        .then((data) => setState((s) => ({ ...s, session_id: data.session_id })))
+        .catch(() => {})
+    );
+  }, [userId]);
 
   const setLocation = useCallback((lat: number, lng: number, text: string) => {
     setState((s) => ({ ...s, lat, lng, location_text: text }));
@@ -166,6 +209,11 @@ export function useConsultation() {
 
   const sendMessage = useCallback(
     async (message: string, inputMethod: "text" | "voice" = "text") => {
+      if (!userId) return;
+
+      // Clear any stale quota error when the user tries again
+      setQuotaError(null);
+
       const userMsg: Message = {
         id:        crypto.randomUUID(),
         role:      "user",
@@ -176,8 +224,10 @@ export function useConsultation() {
       setIsLoading(true);
 
       try {
+        const token = await getAuthToken();
+
         const body = {
-          user_id:              USER_ID,
+          user_id:              userId,
           session_id:           state.session_id,
           message,
           accumulated_symptoms: state.accumulated_symptoms,
@@ -192,7 +242,7 @@ export function useConsultation() {
           local_time:           new Date().toISOString().slice(0, 19),
         };
 
-        const data: ConsultationResponse = await api.sendMessage(body);
+        const data: ConsultationResponse = await api.sendMessage(body, token);
         setApiConnected(true);
 
         const isNowPostConclusion = state.is_post_conclusion || data.is_conclusion;
@@ -220,42 +270,75 @@ export function useConsultation() {
 
         if (data.urgency_level === "emergency") setIsEmergency(true);
 
-        const mcp = (data as any).mcp_enrichment || {};
+        // const mcp = (data as any).mcp_enrichment || {};
 
-        setResults((r) => ({
-          ...r,
-          diagnoses:      data.graph_candidates ? mapDiagnoses(data.graph_candidates as any) : r.diagnoses,
-          doctors:        data.doctors           ? mapDoctors(data.doctors as any)            : r.doctors,
-          specialistType: (data as any).specialist_type || r.specialistType,
-          tests:          mcp.tests              ? mapTests(mcp.tests)                        : r.tests,
-          medications:    mcp.drugs              ? mapMedications(mcp.drugs)                  : r.medications,
-          interactions:   mcp.interactions       ? mapInteractions(mcp.interactions)          : r.interactions,
-          pubmed:         mcp.pubmed_papers       ? mapPubmed(mcp.pubmed_papers)              : r.pubmed,
-          guidelines:     mcp.guidelines         ? mapGuidelines(mcp.guidelines)              : r.guidelines,
-        }));
+        // setResults((r) => ({
+        //   ...r,
+        //   diagnoses:      data.graph_candidates ? mapDiagnoses(data.graph_candidates as any) : r.diagnoses,
+        //   doctors:        data.doctors           ? mapDoctors(data.doctors as any)            : r.doctors,
+        //   specialistType: (data as any).specialist_type || r.specialistType,
+        //   tests:          mcp.tests              ? mapTests(mcp.tests)                        : r.tests,
+        //   medications:    mcp.drugs              ? mapMedications(mcp.drugs)                  : r.medications,
+        //   interactions:   mcp.interactions       ? mapInteractions(mcp.interactions)          : r.interactions,
+        //   pubmed:         mcp.pubmed_papers       ? mapPubmed(mcp.pubmed_papers)              : r.pubmed,
+        //   guidelines:     mcp.guidelines         ? mapGuidelines(mcp.guidelines)              : r.guidelines,
+        // }));
+
+        // const isAlreadyConcluded = state.is_post_conclusion || data.is_conclusion;
+
+        if (!state.is_post_conclusion) {
+          const mcp = (data as any).mcp_enrichment || {};
+          setResults((r) => ({
+            ...r,
+            diagnoses:      data.graph_candidates ? mapDiagnoses(data.graph_candidates as any) : r.diagnoses,
+            doctors:        data.doctors           ? mapDoctors(data.doctors as any)            : r.doctors,
+            specialistType: (data as any).specialist_type || r.specialistType,
+            tests:          mcp.tests              ? mapTests(mcp.tests)                        : r.tests,
+            medications:    mcp.drugs              ? mapMedications(mcp.drugs)                  : r.medications,
+            interactions:   mcp.interactions       ? mapInteractions(mcp.interactions)          : r.interactions,
+            pubmed:         mcp.pubmed_papers       ? mapPubmed(mcp.pubmed_papers)              : r.pubmed,
+            guidelines:     mcp.guidelines         ? mapGuidelines(mcp.guidelines)              : r.guidelines,
+          }));
+        }
+
 
         setUploadedFileName(null);
-      } catch {
-        setApiConnected(false);
-        const errMsg: Message = {
-          id:        crypto.randomUUID(),
-          role:      "system",
-          content:   "Connection error. Please ensure the backend is running at http://localhost:8001",
-          timestamp: new Date(),
-        };
-        setMessages((m) => [...m, errMsg]);
+      } catch (err: any) {
+        // 429 — quota exceeded
+        if (err?.status === 429 || err?.detail?.message === "Daily session limit reached") {
+          const detail = err?.detail || err;
+          setQuotaError({
+            type:         "quota_exceeded",
+            sessionsUsed: detail.sessions_used ?? 5,
+            limit:        detail.limit         ?? 5,
+            resetAt:      detail.reset_at      ?? new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+          });
+          // Remove the user message we optimistically added — the send never happened
+          setMessages((m) => m.filter((msg) => msg.id !== userMsg.id));
+        } else {
+          setApiConnected(false);
+          const errMsg: Message = {
+            id:        crypto.randomUUID(),
+            role:      "system",
+            content:   "Connection error. Please check your connection and try again.",
+            timestamp: new Date(),
+          };
+          setMessages((m) => [...m, errMsg]);
+        }
       } finally {
         setIsLoading(false);
       }
     },
-    [state]
+    [state, userId]
   );
 
   const uploadFile = useCallback(
     async (file: File) => {
+      if (!userId) return;
       setIsUploading(true);
       try {
-        const data = await api.uploadFile(state.session_id, USER_ID, file);
+        const token = await getAuthToken();
+        const data  = await api.uploadFile(state.session_id, userId, file, token);
         setState((s) => ({ ...s, file_analysis: data.analysis }));
         setUploadedFileName(file.name);
         setResults((r) => ({
@@ -268,7 +351,7 @@ export function useConsultation() {
         setIsUploading(false);
       }
     },
-    [state.session_id]
+    [state.session_id, userId]
   );
 
   const removeFile = useCallback(() => {
@@ -277,48 +360,64 @@ export function useConsultation() {
   }, []);
 
   const newSession = useCallback(async () => {
+    if (!userId) return;
+
+    // Clear any previous quota error before attempting a new session
+    setQuotaError(null);
+
     let newSessionId: string | null = null;
     try {
-      const data = await api.newSession(USER_ID, state.session_id);
+      const token = await getAuthToken();
+      const data  = await api.newSession(userId, state.session_id, token);
       newSessionId = data.session_id ?? null;
-    } catch {
-      // proceed anyway — session_id stays null, will be created on first message
+    } catch (err: any) {
+      // 429 — quota exceeded on new session creation
+      if (err?.status === 429 || err?.detail?.message === "Daily session limit reached") {
+        const detail = err?.detail || err;
+        setQuotaError({
+          type:         "quota_exceeded",
+          sessionsUsed: detail.sessions_used ?? 5,
+          limit:        detail.limit         ?? 5,
+          resetAt:      detail.reset_at      ?? new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+        });
+        return; // Don't reset UI — keep the current session visible
+      }
+      // Network error — proceed anyway, session_id stays null
     }
+
     setState({ ...initialState, session_id: newSessionId });
     setMessages([]);
     setResults(initialResults);
     setIsEmergency(false);
     setUploadedFileName(null);
-  }, [state.session_id]);
+  }, [state.session_id, userId]);
 
-  // Downloads raw report as .html file
   const downloadReport = useCallback(async () => {
-    if (!state.session_id) return;
+    if (!state.session_id || !userId) return;
     try {
-      const data = await api.downloadReport(state.session_id, USER_ID);
-      const html = generateReportHTML(data, []);
-      const blob = new Blob([html], { type: "text/html" });
-      const url  = URL.createObjectURL(blob);
-      const a    = document.createElement("a");
-      a.href     = url;
-      a.download = "symptara_report.html";
+      const token = await getAuthToken();
+      const data  = await api.downloadReport(state.session_id, userId, token);
+      const html  = generateReportHTML(data, []);
+      const blob  = new Blob([html], { type: "text/html" });
+      const url   = URL.createObjectURL(blob);
+      const a     = document.createElement("a");
+      a.href      = url;
+      a.download  = "symptara_report.html";
       a.click();
       URL.revokeObjectURL(url);
     } catch {
       // silent
     }
-  }, [state.session_id]);
+  }, [state.session_id, userId]);
 
-  // Opens the styled report in a new tab and triggers browser print dialog.
-  // User selects "Save as PDF" — no external library needed.
   const downloadReportAsPDF = useCallback(async () => {
-    if (!state.session_id) return;
+    if (!state.session_id || !userId) return;
     try {
-      const data        = await api.downloadReport(state.session_id, USER_ID);
+      const token       = await getAuthToken();
+      const data        = await api.downloadReport(state.session_id, userId, token);
       const html        = generateReportHTML(data, messages);
       const printWindow = window.open("", "_blank");
       if (!printWindow) {
-        // Popup blocked — fall back to HTML download
         const blob = new Blob([html], { type: "text/html" });
         const url  = URL.createObjectURL(blob);
         const a    = document.createElement("a");
@@ -330,7 +429,6 @@ export function useConsultation() {
       }
       printWindow.document.write(html);
       printWindow.document.close();
-      // Wait for fonts + styles to render before triggering print
       setTimeout(() => {
         printWindow.focus();
         printWindow.print();
@@ -338,14 +436,14 @@ export function useConsultation() {
     } catch {
       // silent
     }
-  }, [state.session_id, messages]);
+  }, [state.session_id, userId, messages]);
 
-  // Called by MedicalInfoDrawer after successful save.
-  // Backend fetches profile fresh from Supabase on every triage call,
-  // so next message send will automatically use the newly saved profile.
   const refreshProfile = useCallback(() => {
     // intentional no-op — profile is read server-side per turn
   }, []);
+
+  // Expose a helper to dismiss the quota error (e.g. when user closes a modal)
+  const dismissQuotaError = useCallback(() => setQuotaError(null), []);
 
   return {
     state,
@@ -356,6 +454,8 @@ export function useConsultation() {
     uploadedFileName,
     isEmergency,
     apiConnected,
+    quotaError,
+    userId,
     sendMessage,
     uploadFile,
     removeFile,
@@ -365,26 +465,24 @@ export function useConsultation() {
     setLocation,
     clearLocation,
     refreshProfile,
+    dismissQuotaError,
   };
 }
 
 // ── Report HTML generator ─────────────────────────────────────────────────────
-// Used by both downloadReport (HTML) and downloadReportAsPDF (print).
-// Includes the full conversation transcript so doctors see everything.
 
 function generateReportHTML(data: Record<string, unknown>, messages: Message[]): string {
-  const meta         = (data.report_metadata as any)       || {};
-  const profile      = (data.patient_profile as any)       || {};
-  const summary      = (data.consultation_summary as any)  || {};
+  const meta         = (data.report_metadata as any)         || {};
+  const profile      = (data.patient_profile as any)         || {};
+  const summary      = (data.consultation_summary as any)    || {};
   const diagnoses    = (data.differential_diagnoses as any[]) || [];
-  const tests        = (data.confirmatory_tests as any[])  || [];
-  const meds         = (data.medications as any[])         || [];
-  const interactions = (data.drug_interactions as any[])   || [];
-  const papers       = (data.pubmed_references as any[])   || [];
-  const guidelines   = (data.clinical_guidelines as any)   || {};
+  const tests        = (data.confirmatory_tests as any[])    || [];
+  const meds         = (data.medications as any[])           || [];
+  const interactions = (data.drug_interactions as any[])     || [];
+  const papers       = (data.pubmed_references as any[])     || [];
+  const guidelines   = (data.clinical_guidelines as any)     || {};
   const files        = (data.uploaded_file_analyses as string[]) || [];
 
-  // Use transcript from API if available, otherwise fall back to in-memory messages
   const transcript: Array<{role: string; content: string}> =
     (data.conversation_transcript as any[]) ||
     messages.map((m) => ({ role: m.role, content: m.content })) ||
@@ -464,9 +562,9 @@ function generateReportHTML(data: Record<string, unknown>, messages: Message[]):
 ${profile.available ? `
 <h2>Patient Profile</h2>
 <div class="card"><div class="grid2">
-  ${profile.age            ? `<div class="mi"><span class="ml">Age</span><span class="mv">${profile.age}</span></div>` : ""}
-  ${profile.sex            ? `<div class="mi"><span class="ml">Sex</span><span class="mv">${profile.sex}</span></div>` : ""}
-  ${profile.blood_type     ? `<div class="mi"><span class="ml">Blood Type</span><span class="mv">${profile.blood_type}</span></div>` : ""}
+  ${profile.age                          ? `<div class="mi"><span class="ml">Age</span><span class="mv">${profile.age}</span></div>` : ""}
+  ${profile.sex                          ? `<div class="mi"><span class="ml">Sex</span><span class="mv">${profile.sex}</span></div>` : ""}
+  ${profile.blood_type                   ? `<div class="mi"><span class="ml">Blood Type</span><span class="mv">${profile.blood_type}</span></div>` : ""}
   ${profile.chronic_conditions?.length   ? `<div class="mi"><span class="ml">Chronic Conditions</span><span class="mv">${profile.chronic_conditions.join(", ")}</span></div>` : ""}
   ${profile.current_medications?.length  ? `<div class="mi"><span class="ml">Current Medications</span><span class="mv">${profile.current_medications.join(", ")}</span></div>` : ""}
   ${profile.allergies?.length            ? `<div class="mi"><span class="ml">Allergies</span><span class="mv">${profile.allergies.join(", ")}</span></div>` : ""}

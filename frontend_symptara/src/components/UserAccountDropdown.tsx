@@ -1,20 +1,14 @@
 /**
  * UserAccountDropdown.tsx
  * =======================
- * Proper user account dropdown in the header.
- * Shows user's name from localStorage identity, with dropdown menu.
- *
- * For MVP (no auth backend):
- * - Displays stored name or "Guest User"
- * - Shows email if set
- * - "Edit Profile" opens the IdentityDrawer
- * - "Sign Out" clears localStorage identity + resets session
+ * Reads display name and email from Supabase auth session.
+ * Shows "Admin" badge for users in the admin_users table.
+ * Falls back to email prefix if no full name is set.
  */
 
 import { useState, useEffect, useRef } from "react";
-import { User, ChevronDown, LogOut, UserCog, Shield } from "lucide-react";
-
-const IDENTITY_KEY = "symptara_user_identity";
+import { User, ChevronDown, LogOut, UserCog, Shield, Crown } from "lucide-react";
+import { supabase } from "@/lib/supabase";
 
 interface UserAccountDropdownProps {
   onEditProfile: () => void;
@@ -26,16 +20,36 @@ export const UserAccountDropdown = ({
   onSignOut,
 }: UserAccountDropdownProps) => {
   const [open,      setOpen]      = useState(false);
-  const [identity,  setIdentity]  = useState<any>(null);
+  const [email,     setEmail]     = useState<string | null>(null);
+  const [userId,    setUserId]    = useState<string | null>(null);
+  const [isAdmin,   setIsAdmin]   = useState(false);
   const dropdownRef               = useRef<HTMLDivElement>(null);
 
-  // Load identity from localStorage
+  // Load user from Supabase session
   useEffect(() => {
-    try {
-      const stored = localStorage.getItem(IDENTITY_KEY);
-      if (stored) setIdentity(JSON.parse(stored));
-    } catch {}
-  }, [open]); // re-read on each open in case it was updated
+    supabase.auth.getSession().then(({ data }) => {
+      const user = data.session?.user;
+      if (!user) return;
+      setEmail(user.email ?? null);
+      setUserId(user.id);
+    });
+
+    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
+      setEmail(session?.user?.email ?? null);
+      setUserId(session?.user?.id ?? null);
+    });
+    return () => listener.subscription.unsubscribe();
+  }, []);
+
+  // Check admin status whenever userId changes
+  useEffect(() => {
+    if (!userId) { setIsAdmin(false); return; }
+    supabase
+      .from("admin_users")
+      .select("user_id")
+      .eq("user_id", userId)
+      .then(({ data }) => setIsAdmin((data?.length ?? 0) > 0));
+  }, [userId]);
 
   // Close on outside click
   useEffect(() => {
@@ -48,23 +62,17 @@ export const UserAccountDropdown = ({
     return () => document.removeEventListener("mousedown", handler);
   }, [open]);
 
-  const displayName  = identity?.full_name?.trim() || "Guest User";
-  const displayEmail = identity?.email?.trim()     || null;
+  // Display name: "Admin" for admin users, email prefix for everyone else
+  const emailPrefix  = email?.split("@")[0] ?? "Guest User";
+  const displayName  = isAdmin ? "Admin" : emailPrefix;
   const initials     = displayName
-    .split(" ")
+    .split(/[\s._-]/)
     .slice(0, 2)
     .map((w: string) => w[0]?.toUpperCase() || "")
-    .join("");
+    .join("") || "GU";
 
-  const handleEditProfile = () => {
-    setOpen(false);
-    onEditProfile();
-  };
-
-  const handleSignOut = () => {
-    setOpen(false);
-    onSignOut();
-  };
+  const handleEditProfile = () => { setOpen(false); onEditProfile(); };
+  const handleSignOut     = () => { setOpen(false); onSignOut(); };
 
   return (
     <div className="relative" ref={dropdownRef}>
@@ -74,12 +82,23 @@ export const UserAccountDropdown = ({
         className="flex items-center gap-1.5 rounded-lg border border-border px-2.5 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
       >
         {/* Avatar circle */}
-        <div className="flex h-6 w-6 items-center justify-center rounded-full bg-primary/20 text-[10px] font-bold text-primary">
-          {initials || <User size={12} />}
+        <div className={`flex h-6 w-6 items-center justify-center rounded-full text-[10px] font-bold ${
+          isAdmin ? "bg-amber-500/20 text-amber-500" : "bg-primary/20 text-primary"
+        }`}>
+          {isAdmin ? <Crown size={11} /> : (initials || <User size={12} />)}
         </div>
+
         <span className="hidden sm:inline max-w-[100px] truncate">
           {displayName}
         </span>
+
+        {/* Admin badge */}
+        {isAdmin && (
+          <span className="hidden sm:inline text-[9px] font-semibold px-1.5 py-0.5 rounded-full bg-amber-500/15 text-amber-500 border border-amber-500/25">
+            ADMIN
+          </span>
+        )}
+
         <ChevronDown
           size={12}
           className={`transition-transform ${open ? "rotate-180" : ""}`}
@@ -88,20 +107,32 @@ export const UserAccountDropdown = ({
 
       {/* Dropdown menu */}
       {open && (
-        <div className="absolute right-0 top-full z-50 mt-2 w-56 overflow-hidden rounded-xl border border-border bg-card shadow-2xl">
+        <div className="absolute right-0 top-full z-50 mt-2 w-60 overflow-hidden rounded-xl border border-border bg-card shadow-2xl">
+
           {/* User info header */}
-          <div className="border-b border-border bg-muted/20 px-4 py-3">
+          <div className={`border-b border-border px-4 py-3 ${
+            isAdmin ? "bg-amber-500/5" : "bg-muted/20"
+          }`}>
             <div className="flex items-center gap-3">
-              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary/20 text-sm font-bold text-primary">
-                {initials || <User size={16} />}
+              <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-sm font-bold ${
+                isAdmin ? "bg-amber-500/20 text-amber-500" : "bg-primary/20 text-primary"
+              }`}>
+                {isAdmin ? <Crown size={16} /> : (initials || <User size={16} />)}
               </div>
               <div className="min-w-0">
-                <p className="truncate text-sm font-semibold text-foreground">
-                  {displayName}
-                </p>
-                {displayEmail && (
+                <div className="flex items-center gap-2">
+                  <p className="truncate text-sm font-semibold text-foreground">
+                    {displayName}
+                  </p>
+                  {isAdmin && (
+                    <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded-full bg-amber-500/15 text-amber-500 border border-amber-500/25 shrink-0">
+                      ADMIN
+                    </span>
+                  )}
+                </div>
+                {email && (
                   <p className="truncate text-[11px] text-muted-foreground">
-                    {displayEmail}
+                    {email}
                   </p>
                 )}
               </div>
@@ -120,11 +151,12 @@ export const UserAccountDropdown = ({
 
             <div className="my-1 border-t border-border/50" />
 
-            {/* Privacy note */}
             <div className="flex items-center gap-2 px-4 py-2">
               <Shield size={11} className="text-muted-foreground shrink-0" />
               <span className="text-[10px] text-muted-foreground leading-tight">
-                Profile data stored locally on this device
+                {isAdmin
+                  ? "Unlimited sessions · Admin access"
+                  : "5 consultations per 24-hour window"}
               </span>
             </div>
 

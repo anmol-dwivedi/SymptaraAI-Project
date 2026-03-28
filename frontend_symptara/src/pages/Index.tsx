@@ -8,6 +8,8 @@ import FileDropZone from "@/components/FileDropZone";
 import { IdentityDrawer, MedicalInfoDrawer } from "@/components/ProfileDrawer";
 import { UserAccountDropdown } from "@/components/UserAccountDropdown";
 import { useConsultation } from "@/hooks/useConsultation";
+import { QuotaBanner } from "@/components/QuotaBanner";
+
 
 const IDENTITY_KEY = "symptara_user_identity";
 const LOCATION_DECIDED_KEY = "symptara_location_decided";
@@ -125,6 +127,8 @@ const Index = () => {
     uploadedFileName,
     isEmergency,
     apiConnected,
+    quotaError,
+    dismissQuotaError,
     sendMessage,
     uploadFile,
     removeFile,
@@ -393,6 +397,12 @@ const Index = () => {
             isLoading={isLoading}
             isPostConclusion={state.is_post_conclusion}
           />
+
+          {quotaError && (
+            <div className="px-4 pt-3">
+              <QuotaBanner quota={quotaError} onDismiss={dismissQuotaError} />
+            </div>
+          )}
 
           <ConsultationInput
             onSend={sendMessage}

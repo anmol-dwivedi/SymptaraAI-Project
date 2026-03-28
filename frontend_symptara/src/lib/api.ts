@@ -1,61 +1,80 @@
-const API_BASE = "http://localhost:8001";
+const BASE_URL = import.meta.env.VITE_API_URL ?? "http://localhost:8001";
+
+// ── Authenticated fetch wrapper ───────────────────────────────────────────────
+// Every call passes the Supabase JWT as Bearer token.
+// If the server returns 4xx/5xx, we throw the parsed JSON body so callers
+// can inspect err.status and err.detail for quota / auth errors.
+
+async function apiFetch(
+  path: string,
+  options: RequestInit = {},
+  token?: string
+): Promise<any> {
+  const headers: Record<string, string> = {
+    ...(options.body && !(options.body instanceof FormData)
+      ? { "Content-Type": "application/json" }
+      : {}),
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    ...(options.headers as Record<string, string> | undefined),
+  };
+
+  const res = await fetch(`${BASE_URL}${path}`, { ...options, headers });
+
+  if (!res.ok) {
+    let detail: any = {};
+    try { detail = await res.json(); } catch { /* non-JSON error body */ }
+    const err: any = new Error(detail?.detail?.message || detail?.message || res.statusText);
+    err.status = res.status;
+    err.detail = detail?.detail ?? detail;
+    throw err;
+  }
+
+  return res.json();
+}
+
+// ── API surface ───────────────────────────────────────────────────────────────
 
 export const api = {
-  sendMessage: async (body: Record<string, unknown>) => {
-    const res = await fetch(`${API_BASE}/consultation/message`, {
+  sendMessage: (body: Record<string, unknown>, token: string) =>
+    apiFetch("/consultation/message", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
-    if (!res.ok) throw new Error(`API error: ${res.status}`);
-    return res.json();
-  },
+      body:   JSON.stringify(body),
+    }, token),
 
-  uploadFile: async (sessionId: string | null, userId: string, file: File) => {
-    const formData = new FormData();
-    formData.append("file", file);
-    formData.append("user_id", userId);
-    if (sessionId) formData.append("session_id", sessionId);
-    const res = await fetch(`${API_BASE}/consultation/upload-file`, {
+  uploadFile: (
+    sessionId: string | null,
+    userId: string,
+    file: File,
+    token: string
+  ) => {
+    const form = new FormData();
+    form.append("file", file);
+    if (sessionId) form.append("session_id", sessionId);
+    form.append("user_id", userId);
+    return apiFetch("/consultation/upload-file", {
       method: "POST",
-      body: formData,
-    });
-    if (!res.ok) throw new Error(`Upload error: ${res.status}`);
-    return res.json();
+      body:   form,
+    }, token);
   },
 
-  newSession: async (userId: string, currentSessionId: string | null) => {
-    const params = new URLSearchParams({ user_id: userId });
-    if (currentSessionId) params.append("current_session_id", currentSessionId);
-    const res = await fetch(`${API_BASE}/consultation/new-session?${params}`, {
+  newSession: (userId: string, currentSessionId: string | null, token: string) =>
+    apiFetch("/consultation/new-session", {
       method: "POST",
-    });
-    if (!res.ok) throw new Error(`New session error: ${res.status}`);
-    return res.json();
-  },
+      body:   JSON.stringify({ user_id: userId, session_id: currentSessionId }),
+    }, token),
 
-  downloadReport: async (sessionId: string, userId: string) => {
-    const res = await fetch(
-      `${API_BASE}/consultation/report/${sessionId}?user_id=${userId}`
-    );
-    if (!res.ok) throw new Error(`Report error: ${res.status}`);
-    return res.json();
-  },
+  downloadReport: (sessionId: string, userId: string, token: string) =>
+    apiFetch(`/consultation/report/${sessionId}?user_id=${userId}`, {}, token),
 
-  getProfile: async (userId: string) => {
-  const res = await fetch(`${API_BASE}/profile/${userId}`);
-  if (!res.ok) throw new Error(`Profile error: ${res.status}`);
-  const data = await res.json();
-  return data; // null if no profile, object if found
-  },
+  getSession: (sessionId: string, token: string) =>
+    apiFetch(`/consultation/session/${sessionId}`, {}, token),
 
-  saveProfile: async (profile: Record<string, unknown>) => {
-    const res = await fetch(`${API_BASE}/profile/`, {
+  getProfile: (userId: string, token: string) =>
+    apiFetch(`/profile/${userId}`, {}, token),
+
+  saveProfile: (userId: string, profile: Record<string, unknown>, token: string) =>
+    apiFetch("/profile/", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(profile),
-    });
-    if (!res.ok) throw new Error(`Profile save error: ${res.status}`);
-    return res.json();
-  },
+      body:   JSON.stringify({ user_id: userId, ...profile }),
+    }, token),
 };
