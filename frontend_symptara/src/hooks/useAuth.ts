@@ -3,19 +3,33 @@ import { supabase } from '@/lib/supabase'
 import type { User } from '@supabase/supabase-js'
 
 export function useAuth() {
-  const [user, setUser] = useState<User | null>(null)
+  const [user,    setUser]    = useState<User | null>(null)
   const [loading, setLoading] = useState(true)
+  const [isAdmin, setIsAdmin] = useState(false)
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
-      setUser(data.session?.user ?? null)
+      const u = data.session?.user ?? null
+      setUser(u)
       setLoading(false)
+      if (u) checkAdmin(u.id)
     })
     const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUser(session?.user ?? null)
+      const u = session?.user ?? null
+      setUser(u)
+      if (u) checkAdmin(u.id)
+      else   setIsAdmin(false)
     })
     return () => listener.subscription.unsubscribe()
   }, [])
+
+  async function checkAdmin(userId: string) {
+    const { data } = await supabase
+      .from('admin_users')
+      .select('user_id')
+      .eq('user_id', userId)
+    setIsAdmin((data?.length ?? 0) > 0)
+  }
 
   const signUp = (email: string, password: string) =>
     supabase.auth.signUp({ email, password })
@@ -30,5 +44,5 @@ export function useAuth() {
     return data.session?.access_token ?? null
   }
 
-  return { user, loading, signUp, signIn, signOut, getToken }
+  return { user, loading, isAdmin, signUp, signIn, signOut, getToken }
 }

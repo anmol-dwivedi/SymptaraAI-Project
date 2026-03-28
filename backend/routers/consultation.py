@@ -152,7 +152,7 @@ async def consultation_message(req: ConsultationRequest):
 
     if triage_result["is_conclusion"]:
 
-        # MCP enrichment
+        # ── 1. MCP enrichment ─────────────────────────────────────────────────
         try:
             current_meds = (context["user_profile"] or {}).get("current_medications", [])
             mcp_data     = enrich_conclusion(
@@ -165,28 +165,8 @@ async def consultation_message(req: ConsultationRequest):
         except Exception as e:
             log.warning(f"MCP enrichment failed: {e}")
 
-        # Build location dict for storage
-        location = {}
-        if req.lat and req.lng:
-            location = {"lat": req.lat, "lng": req.lng, "location_text": req.location_text}
-        elif req.location_text:
-            location = {"location_text": req.location_text}
-
-        # Store conclusion with all context
-        diagnoses = [
-            {"disease": c["disease"], "score": c.get("match_ratio", 0)}
-            for c in context["graph_candidates"]
-        ]
-        conclude_session(
-            session_id,
-            diagnoses,
-            mcp_enrichment=mcp_data,
-            location=location if location else None,
-            timezone=req.timezone,
-            local_time=req.local_time
-        )
-
-        # Doctor finder
+        # ── 2. Doctor finder — runs BEFORE conclude_session ───────────────────
+        # Doctors are added to mcp_data so they are persisted with the session.
         try:
             doctor_result   = find_nearby_doctors(
                 diagnoses=context["graph_candidates"],
@@ -198,8 +178,30 @@ async def consultation_message(req: ConsultationRequest):
             doctors         = doctor_result["doctors"]
             urgency_level   = doctor_result["urgency_level"]
             specialist_type = doctor_result["specialist_type"]
+            mcp_data["doctors"] = doctors   # ← included in session save below
         except Exception:
             pass
+
+        # ── 3. Build location dict ────────────────────────────────────────────
+        location = {}
+        if req.lat and req.lng:
+            location = {"lat": req.lat, "lng": req.lng, "location_text": req.location_text}
+        elif req.location_text:
+            location = {"location_text": req.location_text}
+
+        # ── 4. Persist session — after both MCP and doctor finder ─────────────
+        diagnoses_to_store = [
+            {"disease": c["disease"], "score": c.get("match_ratio", 0)}
+            for c in context["graph_candidates"]
+        ]
+        conclude_session(
+            session_id,
+            diagnoses_to_store,
+            mcp_enrichment=mcp_data,        # now includes doctors
+            location=location if location else None,
+            timezone=req.timezone,
+            local_time=req.local_time
+        )
 
     if req.is_post_conclusion and restored_mcp:
         mcp_data = restored_mcp

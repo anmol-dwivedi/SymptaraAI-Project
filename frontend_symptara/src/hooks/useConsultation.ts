@@ -481,7 +481,8 @@ function generateReportHTML(data: Record<string, unknown>, messages: Message[]):
   const interactions = (data.drug_interactions as any[])     || [];
   const papers       = (data.pubmed_references as any[])     || [];
   const guidelines   = (data.clinical_guidelines as any)     || {};
-  const files        = (data.uploaded_file_analyses as string[]) || [];
+  const files        = (data.uploaded_file_analyses as any[]) || [];
+  const doctors      = (data.nearby_doctors as any[])         || [];
 
   const transcript: Array<{role: string; content: string}> =
     (data.conversation_transcript as any[]) ||
@@ -635,9 +636,29 @@ ${(guidelines.guideline || guidelines.content) ? `
   <p style="font-size:12px;color:#8B8FA8">${guidelines.guideline || guidelines.content || ""}</p>
 </div>` : ""}
 
+${doctors.length ? `
+<h2>Nearby Doctors & Specialists</h2>
+${doctors.map((d: any) => `<div class="card">
+  <div class="row">
+    <span style="font-weight:600;font-size:14px">${d.name || ""}</span>
+    ${d.rating ? `<span class="badge" style="color:#FFB800;border-color:#FFB80040">★ ${d.rating}</span>` : ""}
+  </div>
+  ${d.address ? `<p style="font-size:12px;color:#8B8FA8;margin-top:4px">${d.address}</p>` : ""}
+  ${d.specialty ? `<p style="font-size:11px;color:#7B2FFF;margin-top:3px">${d.specialty}</p>` : ""}
+  ${d.maps_link || d.google_maps_link ? `<a href="${d.maps_link || d.google_maps_link}" style="font-size:11px;margin-top:6px;display:inline-block">View on Google Maps →</a>` : ""}
+</div>`).join("")}` : ""}
+
 ${files.length ? `
 <h2>Uploaded File Analyses</h2>
-${files.map((f: string) => `<div class="pre">${f}</div>`).join("")}` : ""}
+${files.map((f: any) => `<div class="card" style="margin-bottom:12px">
+  <div class="row" style="margin-bottom:8px">
+    <span style="font-weight:600;font-size:13px">${f.filename || "Uploaded file"}</span>
+    <span class="badge" style="color:#00D4FF;border-color:#00D4FF40">${f.file_type || "file"}</span>
+  </div>
+  <div class="pre" style="margin-top:0">${f.analysis || f}</div>
+</div>`).join("")}` : ""}
+
+
 
 ${transcript.length ? `
 <h2>Full Consultation Transcript</h2>

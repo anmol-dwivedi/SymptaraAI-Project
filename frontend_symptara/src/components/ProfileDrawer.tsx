@@ -6,18 +6,26 @@
  *   IdentityDrawer     — contact info, stored in localStorage only
  *   MedicalInfoDrawer  — medical history, saved to Supabase via POST /profile/
  *
- * Fix: MedicalInfoDrawer accepts onSaved() callback so the consultation
- * hook can re-fetch the profile immediately after save — no stale data.
+ * Auth: reads user_id and JWT token from Supabase session on every open.
  */
 
 import { useState, useEffect, useCallback } from "react";
 import { X, Plus, User, Stethoscope, CheckCircle } from "lucide-react";
 import type { UserProfile, UserIdentity } from "@/types/consultation";
 import { api } from "@/lib/api";
+import { supabase } from "@/lib/supabase";
 
-const USER_ID     = "00000000-0000-0000-0000-000000000001";
-const BLOOD_TYPES = ["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"];
+const BLOOD_TYPES  = ["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"];
 const IDENTITY_KEY = "symptara_user_identity";
+
+// ── Auth helpers ──────────────────────────────────────────────────────────────
+
+async function getAuthContext(): Promise<{ userId: string; token: string } | null> {
+  const { data } = await supabase.auth.getSession();
+  const session  = data.session;
+  if (!session) return null;
+  return { userId: session.user.id, token: session.access_token };
+}
 
 // ── Shared sub-components ─────────────────────────────────────────────────────
 
@@ -116,7 +124,7 @@ interface IdentityDrawerProps {
 
 export const IdentityDrawer = ({ open, onClose }: IdentityDrawerProps) => {
   const [identity, setIdentity] = useState<UserIdentity>({
-    user_id: USER_ID, full_name: "", email: "", phone: "", address: "", other_info: "",
+    user_id: "", full_name: "", email: "", phone: "", address: "", other_info: "",
   });
   const [saved, setSaved] = useState(false);
 
@@ -124,7 +132,7 @@ export const IdentityDrawer = ({ open, onClose }: IdentityDrawerProps) => {
     if (!open) return;
     try {
       const stored = localStorage.getItem(IDENTITY_KEY);
-      if (stored) setIdentity({ ...JSON.parse(stored), user_id: USER_ID });
+      if (stored) setIdentity(JSON.parse(stored));
     } catch {}
   }, [open]);
 
@@ -170,18 +178,16 @@ export const IdentityDrawer = ({ open, onClose }: IdentityDrawerProps) => {
 };
 
 // ── Medical Info Drawer ───────────────────────────────────────────────────────
-// onSaved() callback — called after successful save so the consultation
-// hook can immediately re-fetch the updated profile from Supabase.
 
 interface MedicalInfoDrawerProps {
   open:     boolean;
   onClose:  () => void;
-  onSaved?: () => void;   // ← hook re-fetches profile when this fires
+  onSaved?: () => void;
 }
 
 export const MedicalInfoDrawer = ({ open, onClose, onSaved }: MedicalInfoDrawerProps) => {
   const [profile, setProfile] = useState<UserProfile>({
-    user_id:             USER_ID,
+    user_id:             "",
     allergies:           [],
     chronic_conditions:  [],
     current_medications: [],
@@ -195,28 +201,30 @@ export const MedicalInfoDrawer = ({ open, onClose, onSaved }: MedicalInfoDrawerP
   useEffect(() => {
     if (!open) return;
     setError(null);
-    api.getProfile(USER_ID)
-      .then((data) => {
-        if (data) setProfile({ ...data, user_id: USER_ID });
-      })
-      .catch(() => {
-        // No profile yet — start with empty form, that's fine
-      });
+    getAuthContext().then((auth) => {
+      if (!auth) { setError("Not signed in."); return; }
+      api.getProfile(auth.userId, auth.token)
+        .then((data) => {
+          if (data) setProfile({ ...data, user_id: auth.userId });
+          else      setProfile((p) => ({ ...p, user_id: auth.userId }));
+        })
+        .catch(() => {
+          // No profile yet — blank form is fine
+        });
+    });
   }, [open]);
 
   const save = useCallback(async () => {
     setSaving(true);
     setError(null);
     try {
-      await api.saveProfile(profile as unknown as Record<string, unknown>);
+      const auth = await getAuthContext();
+      if (!auth) throw new Error("Not signed in");
+      await api.saveProfile(auth.userId, { ...profile, user_id: auth.userId }, auth.token);
       setSaved(true);
-      // Fire callback so consultation hook re-fetches immediately
       onSaved?.();
-      setTimeout(() => {
-        setSaved(false);
-        onClose();
-      }, 800);
-    } catch (e) {
+      setTimeout(() => { setSaved(false); onClose(); }, 800);
+    } catch {
       setError("Failed to save. Please check your connection and try again.");
     } finally {
       setSaving(false);
@@ -260,10 +268,10 @@ export const MedicalInfoDrawer = ({ open, onClose, onSaved }: MedicalInfoDrawerP
         </select>
       </Field>
 
-      <TagInput label="Allergies" values={profile.allergies || []} onChange={(v) => setProfile({ ...profile, allergies: v })} />
-      <TagInput label="Chronic Conditions" values={profile.chronic_conditions || []} onChange={(v) => setProfile({ ...profile, chronic_conditions: v })} />
-      <TagInput label="Current Medications" values={profile.current_medications || []} onChange={(v) => setProfile({ ...profile, current_medications: v })} />
-      <TagInput label="Past Surgeries" values={profile.past_surgeries || []} onChange={(v) => setProfile({ ...profile, past_surgeries: v })} />
+      <TagInput label="Allergies"            values={profile.allergies           || []} onChange={(v) => setProfile({ ...profile, allergies:           v })} />
+      <TagInput label="Chronic Conditions"   values={profile.chronic_conditions  || []} onChange={(v) => setProfile({ ...profile, chronic_conditions:  v })} />
+      <TagInput label="Current Medications"  values={profile.current_medications || []} onChange={(v) => setProfile({ ...profile, current_medications: v })} />
+      <TagInput label="Past Surgeries"       values={profile.past_surgeries      || []} onChange={(v) => setProfile({ ...profile, past_surgeries:      v })} />
 
       <button onClick={save} disabled={saving}
         className="w-full rounded-lg bg-secondary py-2.5 text-sm font-medium text-secondary-foreground transition-all hover:brightness-110 disabled:opacity-50 flex items-center justify-center gap-2">
